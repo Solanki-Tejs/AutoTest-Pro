@@ -1,26 +1,115 @@
+@import url("https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;500;600&display=swap");
 @import "tailwindcss";
 
+/* ─── Design Tokens ─────────────────────────────────────────────── */
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --bg-base:        #07080F;
+  --bg-card:        #0E1020;
+  --bg-surface:     #131629;
+  --border:         #1E2140;
+  --border-hover:   #2E3260;
+
+  --accent:         #6C63FF;
+  --accent-glow:    #9F97FF;
+  --accent-dim:     rgba(108, 99, 255, 0.15);
+
+  --teacher:        #2563EB;
+  --teacher-glow:   rgba(37, 99, 235, 0.35);
+  --teacher-dim:    rgba(37, 99, 235, 0.12);
+
+  --student:        #7C3AED;
+  --student-glow:   rgba(124, 58, 237, 0.35);
+  --student-dim:    rgba(124, 58, 237, 0.12);
+
+  --text-primary:   #F0EFFF;
+  --text-secondary: #B8B6D4;
+  --text-muted:     #7B7FA6;
+  --text-faint:     #3D4168;
+
+  --success:        #10B981;
+  --error:          #EF4444;
+  --warning:        #F59E0B;
+
+  --radius-sm:      8px;
+  --radius-md:      14px;
+  --radius-lg:      20px;
+  --radius-xl:      28px;
+
+  --shadow-card:    0 8px 40px rgba(0,0,0,0.6), 0 2px 12px rgba(0,0,0,0.4);
+  --shadow-glow-teacher: 0 0 60px rgba(37, 99, 235, 0.25);
+  --shadow-glow-student: 0 0 60px rgba(124, 58, 237, 0.25);
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+/* ─── Base Reset ────────────────────────────────────────────────── */
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+html, body {
+  height: 100%;
+  background: var(--bg-base);
+  color: var(--text-primary);
+  font-family: "Inter", system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  overflow-x: hidden;
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+/* ─── Typography ────────────────────────────────────────────────── */
+h1, h2, h3, h4, h5 {
+  font-family: "Space Grotesk", sans-serif;
+  letter-spacing: -0.02em;
+  line-height: 1.15;
 }
+
+/* ─── Scrollbar ─────────────────────────────────────────────────── */
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: var(--bg-base); }
+::-webkit-scrollbar-thumb { background: var(--border-hover); border-radius: 3px; }
+
+/* ─── Animations ────────────────────────────────────────────────── */
+@keyframes orb-pulse {
+  0%, 100% { transform: scale(1) translate(0, 0); opacity: 0.6; }
+  33%       { transform: scale(1.08) translate(8px, -12px); opacity: 0.8; }
+  66%       { transform: scale(0.94) translate(-10px, 6px); opacity: 0.5; }
+}
+
+@keyframes fade-up {
+  from { opacity: 0; transform: translateY(18px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes fade-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+@keyframes shimmer {
+  0%   { background-position: -200% center; }
+  100% { background-position: 200% center; }
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes strength-fill {
+  from { width: 0; }
+  to   { width: var(--w); }
+}
+
+/* ─── Utility Classes ───────────────────────────────────────────── */
+.font-display { font-family: "Space Grotesk", sans-serif; }
+.font-body    { font-family: "Inter", sans-serif; }
+
+.animate-fade-up  { animation: fade-up  0.45s cubic-bezier(0.22,1,0.36,1) both; }
+.animate-fade-in  { animation: fade-in  0.3s ease both; }
+
+.stagger-1 { animation-delay: 0.05s; }
+.stagger-2 { animation-delay: 0.12s; }
+.stagger-3 { animation-delay: 0.19s; }
+.stagger-4 { animation-delay: 0.26s; }
+.stagger-5 { animation-delay: 0.33s; }
+.stagger-6 { animation-delay: 0.40s; }
