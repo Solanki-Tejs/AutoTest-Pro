@@ -14,8 +14,7 @@ export default function TeacherLoginPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const color = "var(--teacher)";
-  const colorDim = "var(--teacher-dim)";
+  const brandColor = "#2563eb";
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -35,26 +34,14 @@ export default function TeacherLoginPage() {
     <AuthCard role="teacher">
       <div className="animate-fade-up">
         {/* Header */}
-        <div style={{ marginBottom: "2rem" }}>
-          <p
-            style={{
-              fontSize: "0.78rem",
-              fontWeight: 600,
-              letterSpacing: "0.1em",
-              textTransform: "uppercase",
-              color: color,
-              marginBottom: "0.6rem",
-            }}
-          >
+        <div className="mb-8">
+          <p className="text-[0.78rem] font-semibold tracking-widest uppercase text-[#2563eb] mb-2.5">
             Teacher Portal
           </p>
-          <h1
-            className="font-display"
-            style={{ fontSize: "1.9rem", fontWeight: 700, color: "var(--text-primary)", letterSpacing: "-0.025em", marginBottom: "0.4rem" }}
-          >
+          <h1 className="text-[1.9rem] font-bold text-slate-900 tracking-tight mb-1.5">
             Welcome back
           </h1>
-          <p style={{ color: "var(--text-muted)", fontSize: "0.92rem" }}>
+          <p className="text-slate-600 text-[0.92rem]">
             Sign in to manage your tests and track students.
           </p>
         </div>
@@ -63,29 +50,20 @@ export default function TeacherLoginPage() {
         {error && (
           <div
             role="alert"
-            style={{
-              display: "flex",
-              alignItems: "flex-start",
-              gap: "10px",
-              padding: "0.85rem 1rem",
-              background: "rgba(239,68,68,0.1)",
-              border: "1px solid rgba(239,68,68,0.3)",
-              borderRadius: "var(--radius-md)",
-              marginBottom: "1.5rem",
-            }}
+            className="flex items-start gap-2.5 px-4 py-3.5 bg-red-50 border border-red-200 rounded-md mb-6"
           >
-            <svg width="18" height="18" style={{ marginTop: 1, flexShrink: 0 }} viewBox="0 0 24 24" fill="none" stroke="#EF4444" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <svg width="18" height="18" className="mt-px shrink-0" viewBox="0 0 24 24" fill="none" stroke="#EF4444" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" />
             </svg>
-            <span style={{ fontSize: "0.88rem", color: "#EF4444" }}>{error}</span>
+            <span className="text-[0.88rem] text-red-600">{error}</span>
           </div>
         )}
 
         {/* Form */}
-        <form onSubmit={handleSubmit} noValidate style={{ display: "flex", flexDirection: "column", gap: "1.1rem" }}>
+        <form onSubmit={handleSubmit} noValidate className="flex flex-col gap-4.5">
           {/* Email */}
           <div>
-            <label htmlFor="teacher-login-email" style={labelStyle}>Email address</label>
+            <label htmlFor="teacher-login-email" className="block text-[0.83rem] font-medium text-slate-600 mb-1.5">Email address</label>
             <input
               id="teacher-login-email"
               type="email"
@@ -94,21 +72,19 @@ export default function TeacherLoginPage() {
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               placeholder="you@school.edu"
-              style={inputStyle(color)}
-              onFocus={(e) => applyInputFocus(e, color)}
-              onBlur={(e) => applyInputBlur(e)}
+              className="w-full h-12 px-4 bg-white border border-slate-200 rounded-md text-slate-900 text-[0.95rem] outline-none transition-all duration-200 focus:border-[#2563eb] focus:ring-[3px] focus:ring-[#2563eb]/10"
             />
           </div>
 
           {/* Password */}
-          <div>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.45rem" }}>
-              <label htmlFor="teacher-login-password" style={{ ...labelStyle, marginBottom: 0 }}>Password</label>
-              <Link href="#" style={{ fontSize: "0.8rem", color: color, textDecoration: "none" }}>
+          <div className="mt-4">
+            <div className="flex justify-between items-center mb-1.5">
+              <label htmlFor="teacher-login-password" className="block text-[0.83rem] font-medium text-slate-600">Password</label>
+              <Link href="#" className="text-[0.8rem] text-[#2563eb] no-underline hover:underline">
                 Forgot password?
               </Link>
             </div>
-            <div style={{ position: "relative" }}>
+            <div className="relative">
               <input
                 id="teacher-login-password"
                 type={showPassword ? "text" : "password"}
@@ -117,15 +93,13 @@ export default function TeacherLoginPage() {
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder="••••••••"
-                style={{ ...inputStyle(color), paddingRight: "3rem" }}
-                onFocus={(e) => applyInputFocus(e, color)}
-                onBlur={(e) => applyInputBlur(e)}
+                className="w-full h-12 px-4 pr-12 bg-white border border-slate-200 rounded-md text-slate-900 text-[0.95rem] outline-none transition-all duration-200 focus:border-[#2563eb] focus:ring-[3px] focus:ring-[#2563eb]/10"
               />
               <button
                 type="button"
                 id="teacher-login-toggle-password"
                 onClick={() => setShowPassword(!showPassword)}
-                style={eyeButtonStyle}
+                className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 transition-colors flex items-center p-0 bg-transparent border-none cursor-pointer"
                 aria-label={showPassword ? "Hide password" : "Show password"}
               >
                 {showPassword ? <EyeOff /> : <EyeOn />}
@@ -138,11 +112,15 @@ export default function TeacherLoginPage() {
             id="teacher-login-submit"
             type="submit"
             disabled={loading}
-            style={submitButtonStyle(color, loading)}
+            className={`mt-4 w-full h-12 flex items-center justify-center gap-2 rounded-md text-white text-[0.97rem] font-semibold transition-all duration-200 ${
+              loading 
+                ? "bg-slate-200 text-slate-400 cursor-not-allowed" 
+                : "bg-[#2563eb] hover:bg-[#1d4ed8] cursor-pointer shadow-sm"
+            }`}
           >
             {loading ? (
               <>
-                <Spinner color="white" />
+                <Spinner color="currentColor" />
                 Signing in…
               </>
             ) : (
@@ -157,46 +135,25 @@ export default function TeacherLoginPage() {
         </form>
 
         {/* Divider */}
-        <div style={{ display: "flex", alignItems: "center", gap: "1rem", margin: "1.5rem 0" }}>
-          <div style={{ flex: 1, height: 1, background: "var(--border)" }} />
-          <span style={{ fontSize: "0.8rem", color: "var(--text-faint)" }}>Don&apos;t have an account?</span>
-          <div style={{ flex: 1, height: 1, background: "var(--border)" }} />
+        <div className="flex items-center gap-4 my-6">
+          <div className="flex-1 h-px bg-slate-200" />
+          <span className="text-[0.8rem] text-slate-400">Don&apos;t have an account?</span>
+          <div className="flex-1 h-px bg-slate-200" />
         </div>
 
         {/* Register link */}
         <Link
           href="/teacher/register"
           id="teacher-login-register-link"
-          style={{
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            gap: "8px",
-            height: "48px",
-            borderRadius: "var(--radius-md)",
-            border: `1.5px solid var(--border)`,
-            color: "var(--text-secondary)",
-            textDecoration: "none",
-            fontSize: "0.92rem",
-            fontWeight: 500,
-            transition: "all 0.2s",
-          }}
-          onMouseEnter={(e) => {
-            (e.currentTarget as HTMLAnchorElement).style.borderColor = color;
-            (e.currentTarget as HTMLAnchorElement).style.color = color;
-          }}
-          onMouseLeave={(e) => {
-            (e.currentTarget as HTMLAnchorElement).style.borderColor = "var(--border)";
-            (e.currentTarget as HTMLAnchorElement).style.color = "var(--text-secondary)";
-          }}
+          className="flex items-center justify-center gap-2 h-12 rounded-md border border-slate-200 text-slate-600 text-[0.92rem] font-medium transition-all duration-200 hover:border-[#2563eb] hover:text-[#2563eb] hover:bg-slate-50 no-underline"
         >
           Create teacher account
         </Link>
 
         {/* Switch role */}
-        <p style={{ textAlign: "center", marginTop: "1.25rem", fontSize: "0.82rem", color: "var(--text-faint)" }}>
+        <p className="text-center mt-5 text-[0.82rem] text-slate-400">
           Not a teacher?{" "}
-          <Link href="/student/login" style={{ color: "var(--student)", textDecoration: "none", fontWeight: 500 }}>
+          <Link href="/student/login" className="text-[#2563eb] font-medium no-underline hover:underline">
             Student login →
           </Link>
         </p>
@@ -206,77 +163,6 @@ export default function TeacherLoginPage() {
 }
 
 // ─── Shared styles ────────────────────────────────────────────────────────────
-
-const labelStyle: React.CSSProperties = {
-  display: "block",
-  fontSize: "0.83rem",
-  fontWeight: 500,
-  color: "var(--text-secondary)",
-  marginBottom: "0.45rem",
-};
-
-function inputStyle(accentColor: string): React.CSSProperties {
-  return {
-    width: "100%",
-    height: "48px",
-    padding: "0 1rem",
-    background: "var(--bg-surface)",
-    border: "1.5px solid var(--border)",
-    borderRadius: "var(--radius-md)",
-    color: "var(--text-primary)",
-    fontSize: "0.95rem",
-    outline: "none",
-    transition: "border-color 0.2s, box-shadow 0.2s",
-    fontFamily: "inherit",
-    // data attr trick for dynamic color — instead we use JS handlers
-    ["--focus-color" as string]: accentColor,
-  };
-}
-
-function applyInputFocus(e: React.FocusEvent<HTMLInputElement>, color: string) {
-  e.currentTarget.style.borderColor = color;
-  e.currentTarget.style.boxShadow = `0 0 0 3px ${color}22`;
-}
-
-function applyInputBlur(e: React.FocusEvent<HTMLInputElement>) {
-  e.currentTarget.style.borderColor = "var(--border)";
-  e.currentTarget.style.boxShadow = "none";
-}
-
-function submitButtonStyle(color: string, loading: boolean): React.CSSProperties {
-  return {
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: "8px",
-    height: "50px",
-    borderRadius: "var(--radius-md)",
-    background: loading ? "var(--bg-surface)" : color,
-    border: "none",
-    color: "white",
-    fontSize: "0.97rem",
-    fontWeight: 600,
-    cursor: loading ? "not-allowed" : "pointer",
-    opacity: loading ? 0.7 : 1,
-    transition: "all 0.2s",
-    fontFamily: "inherit",
-    marginTop: "0.25rem",
-  };
-}
-
-const eyeButtonStyle: React.CSSProperties = {
-  position: "absolute",
-  right: "1rem",
-  top: "50%",
-  transform: "translateY(-50%)",
-  background: "none",
-  border: "none",
-  cursor: "pointer",
-  color: "var(--text-muted)",
-  display: "flex",
-  alignItems: "center",
-  padding: 0,
-};
 
 function Spinner({ color }: { color: string }) {
   return (

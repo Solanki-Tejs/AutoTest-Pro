@@ -17,8 +17,7 @@ export default function StudentRegisterPage() {
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
 
-  const color = "var(--student)";
-
+  const brandColor = "#6c63ff";
   const strength = getPasswordStrength(password);
 
   async function handleSubmit(e: FormEvent) {
@@ -49,12 +48,16 @@ export default function StudentRegisterPage() {
   if (success) {
     return (
       <AuthCard role="student">
-        <div className="animate-fade-up" style={{ textAlign: "center", padding: "2rem" }}>
-          <div style={{ width: 72, height: 72, borderRadius: "50%", background: `${color}22`, border: `2px solid ${color}`, display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 1.5rem" }}>
-            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="var(--student)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6L9 17l-5-5" /></svg>
+        <div className="animate-fade-up text-center p-8">
+          <div className="w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-6" style={{
+            backgroundColor: `${brandColor}15`, border: `2px solid ${brandColor}`
+          }}>
+            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke={brandColor} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M20 6L9 17l-5-5" />
+            </svg>
           </div>
-          <h2 className="font-display" style={{ fontSize: "1.5rem", fontWeight: 700, color: "var(--text-primary)", marginBottom: "0.5rem" }}>Account created!</h2>
-          <p style={{ color: "var(--text-muted)", fontSize: "0.92rem" }}>Redirecting you to sign in…</p>
+          <h2 className="text-2xl font-bold text-slate-900 mb-2">Account created!</h2>
+          <p className="text-slate-600 text-[0.92rem]">Redirecting you to sign in…</p>
         </div>
       </AuthCard>
     );
@@ -63,89 +66,150 @@ export default function StudentRegisterPage() {
   return (
     <AuthCard role="student">
       <div className="animate-fade-up">
-        <div style={{ marginBottom: "2rem" }}>
-          <p style={{ fontSize: "0.78rem", fontWeight: 600, letterSpacing: "0.1em", textTransform: "uppercase", color, marginBottom: "0.6rem" }}>Student Portal</p>
-          <h1 className="font-display" style={{ fontSize: "1.9rem", fontWeight: 700, color: "var(--text-primary)", letterSpacing: "-0.025em", marginBottom: "0.4rem" }}>Create your account</h1>
-          <p style={{ color: "var(--text-muted)", fontSize: "0.92rem" }}>Join AutoTest Pro and take your first test today.</p>
+        {/* Header */}
+        <div className="mb-8">
+          <p className="text-[0.78rem] font-semibold tracking-widest uppercase text-[#6c63ff] mb-2.5">
+            Student Portal
+          </p>
+          <h1 className="text-[1.9rem] font-bold text-slate-900 tracking-tight mb-1.5">
+            Create your account
+          </h1>
+          <p className="text-slate-600 text-[0.92rem]">
+            Join AutoTest Pro and take your first test today.
+          </p>
         </div>
 
+        {/* Error */}
         {error && (
-          <div role="alert" style={{ display: "flex", alignItems: "flex-start", gap: "10px", padding: "0.85rem 1rem", background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.3)", borderRadius: "var(--radius-md)", marginBottom: "1.5rem" }}>
-            <svg width="18" height="18" style={{ marginTop: 1, flexShrink: 0 }} viewBox="0 0 24 24" fill="none" stroke="#EF4444" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" /></svg>
-            <span style={{ fontSize: "0.88rem", color: "#EF4444" }}>{error}</span>
+          <div role="alert" className="flex items-start gap-2.5 px-4 py-3.5 bg-red-50 border border-red-200 rounded-md mb-6">
+            <svg width="18" height="18" className="mt-px shrink-0" viewBox="0 0 24 24" fill="none" stroke="#EF4444" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" />
+            </svg>
+            <span className="text-[0.88rem] text-red-600">{error}</span>
           </div>
         )}
 
-        <form onSubmit={handleSubmit} noValidate style={{ display: "flex", flexDirection: "column", gap: "1.1rem" }}>
+        <form onSubmit={handleSubmit} noValidate className="flex flex-col gap-4.5">
+          {/* Full Name */}
           <div className="animate-fade-up stagger-1">
-            <label htmlFor="student-reg-name" style={labelStyle}>Full name</label>
-            <input id="student-reg-name" type="text" required autoComplete="name" value={name} onChange={(e) => setName(e.target.value)} placeholder="Alex Johnson" style={inputStyle}
-              onFocus={(e) => { e.currentTarget.style.borderColor = color; e.currentTarget.style.boxShadow = `0 0 0 3px ${color}22`; }}
-              onBlur={(e) => { e.currentTarget.style.borderColor = "var(--border)"; e.currentTarget.style.boxShadow = "none"; }} />
+            <label htmlFor="student-reg-name" className="block text-[0.83rem] font-medium text-slate-600 mb-1.5">Full name</label>
+            <input
+              id="student-reg-name"
+              type="text"
+              required
+              autoComplete="name"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="Alex Johnson"
+              className="w-full h-12 px-4 bg-white border border-slate-200 rounded-md text-slate-900 text-[0.95rem] outline-none transition-all duration-200 focus:border-[#6c63ff] focus:ring-[3px] focus:ring-[#6c63ff]/10"
+            />
           </div>
 
-          <div className="animate-fade-up stagger-2">
-            <label htmlFor="student-reg-email" style={labelStyle}>Email address</label>
-            <input id="student-reg-email" type="email" required autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@university.edu" style={inputStyle}
-              onFocus={(e) => { e.currentTarget.style.borderColor = color; e.currentTarget.style.boxShadow = `0 0 0 3px ${color}22`; }}
-              onBlur={(e) => { e.currentTarget.style.borderColor = "var(--border)"; e.currentTarget.style.boxShadow = "none"; }} />
+          {/* Email */}
+          <div className="animate-fade-up stagger-2 mt-4">
+            <label htmlFor="student-reg-email" className="block text-[0.83rem] font-medium text-slate-600 mb-1.5">Email address</label>
+            <input
+              id="student-reg-email"
+              type="email"
+              required
+              autoComplete="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="you@university.edu"
+              className="w-full h-12 px-4 bg-white border border-slate-200 rounded-md text-slate-900 text-[0.95rem] outline-none transition-all duration-200 focus:border-[#6c63ff] focus:ring-[3px] focus:ring-[#6c63ff]/10"
+            />
           </div>
 
-          <div className="animate-fade-up stagger-3">
-            <label htmlFor="student-reg-password" style={labelStyle}>Password</label>
-            <div style={{ position: "relative" }}>
-              <input id="student-reg-password" type={showPassword ? "text" : "password"} required autoComplete="new-password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Min. 8 characters" style={{ ...inputStyle, paddingRight: "3rem" }}
-                onFocus={(e) => { e.currentTarget.style.borderColor = color; e.currentTarget.style.boxShadow = `0 0 0 3px ${color}22`; }}
-                onBlur={(e) => { e.currentTarget.style.borderColor = "var(--border)"; e.currentTarget.style.boxShadow = "none"; }} />
-              <button type="button" id="student-reg-toggle-password" onClick={() => setShowPassword(!showPassword)} style={eyeButtonStyle} aria-label={showPassword ? "Hide password" : "Show password"}>
+          {/* Password */}
+          <div className="animate-fade-up stagger-3 mt-4">
+            <label htmlFor="student-reg-password" className="block text-[0.83rem] font-medium text-slate-600 mb-1.5">Password</label>
+            <div className="relative">
+              <input
+                id="student-reg-password"
+                type={showPassword ? "text" : "password"}
+                required
+                autoComplete="new-password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="Min. 8 characters"
+                className="w-full h-12 px-4 pr-12 bg-white border border-slate-200 rounded-md text-slate-900 text-[0.95rem] outline-none transition-all duration-200 focus:border-[#6c63ff] focus:ring-[3px] focus:ring-[#6c63ff]/10"
+              />
+              <button type="button" id="student-reg-toggle-password" onClick={() => setShowPassword(!showPassword)} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 transition-colors flex items-center p-0 bg-transparent border-none cursor-pointer" aria-label={showPassword ? "Hide password" : "Show password"}>
                 {showPassword ? <EyeOff /> : <EyeOn />}
               </button>
             </div>
+            {/* Strength meter */}
             {password && (
-              <div style={{ marginTop: "0.5rem" }}>
-                <div style={{ display: "flex", gap: "4px", marginBottom: "4px" }}>
+              <div className="mt-2">
+                <div className="flex gap-1 mb-1">
                   {[0, 1, 2, 3].map((i) => (
-                    <div key={i} style={{ flex: 1, height: 4, borderRadius: 2, background: i < strength.score ? strength.color : "var(--border)", transition: "background 0.3s" }} />
+                    <div key={i} className="flex-1 h-1 rounded-full transition-colors duration-300" style={{
+                      backgroundColor: i < strength.score ? strength.color : "#e2e8f0"
+                    }} />
                   ))}
                 </div>
-                <span style={{ fontSize: "0.75rem", color: strength.color }}>{strength.label}</span>
+                <span className="text-xs" style={{ color: strength.color }}>{strength.label}</span>
               </div>
             )}
           </div>
 
-          <div className="animate-fade-up stagger-4">
-            <label htmlFor="student-reg-confirm" style={labelStyle}>Confirm password</label>
-            <input id="student-reg-confirm" type="password" required autoComplete="new-password" value={confirm} onChange={(e) => setConfirm(e.target.value)} placeholder="••••••••"
-              style={{ ...inputStyle, borderColor: confirm && confirm !== password ? "var(--error)" : "var(--border)" }}
-              onFocus={(e) => { e.currentTarget.style.borderColor = color; e.currentTarget.style.boxShadow = `0 0 0 3px ${color}22`; }}
-              onBlur={(e) => { e.currentTarget.style.borderColor = confirm && confirm !== password ? "var(--error)" : "var(--border)"; e.currentTarget.style.boxShadow = "none"; }} />
+          {/* Confirm Password */}
+          <div className="animate-fade-up stagger-4 mt-4">
+            <label htmlFor="student-reg-confirm" className="block text-[0.83rem] font-medium text-slate-600 mb-1.5">Confirm password</label>
+            <input
+              id="student-reg-confirm"
+              type="password"
+              required
+              autoComplete="new-password"
+              value={confirm}
+              onChange={(e) => setConfirm(e.target.value)}
+              placeholder="••••••••"
+              className={`w-full h-12 px-4 bg-white border rounded-md text-slate-900 text-[0.95rem] outline-none transition-all duration-200 focus:ring-[3px] ${
+                confirm && confirm !== password 
+                  ? "border-red-400 focus:border-red-500 focus:ring-red-500/10" 
+                  : "border-slate-200 focus:border-[#6c63ff] focus:ring-[#6c63ff]/10"
+              }`}
+            />
             {confirm && confirm !== password && (
-              <p style={{ fontSize: "0.78rem", color: "var(--error)", marginTop: "0.3rem" }}>Passwords don&apos;t match.</p>
+              <p className="text-[0.78rem] text-red-500 mt-1.5">Passwords don&apos;t match.</p>
             )}
           </div>
 
-          <button id="student-reg-submit" type="submit" disabled={loading} className="animate-fade-up stagger-5"
-            style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "8px", height: "50px", borderRadius: "var(--radius-md)", background: loading ? "var(--bg-surface)" : color, border: "none", color: "white", fontSize: "0.97rem", fontWeight: 600, cursor: loading ? "not-allowed" : "pointer", opacity: loading ? 0.7 : 1, transition: "all 0.2s", fontFamily: "inherit", marginTop: "0.25rem" }}>
-            {loading ? <><Spinner /> Creating account…</> : <>Create student account<ArrowIcon /></>}
+          {/* Submit */}
+          <button
+            id="student-reg-submit"
+            type="submit"
+            disabled={loading}
+            className={`animate-fade-up stagger-5 mt-4 w-full h-12 flex items-center justify-center gap-2 rounded-md text-white text-[0.97rem] font-semibold transition-all duration-200 ${
+              loading 
+                ? "bg-slate-200 text-slate-400 cursor-not-allowed" 
+                : "bg-[#6c63ff] hover:bg-[#5a52d5] cursor-pointer shadow-sm"
+            }`}
+          >
+            {loading ? (
+              <><Spinner color="currentColor" /> Creating account…</>
+            ) : (
+              <>Create student account<ArrowIcon /></>
+            )}
           </button>
         </form>
 
-        <div style={{ display: "flex", alignItems: "center", gap: "1rem", margin: "1.5rem 0" }}>
-          <div style={{ flex: 1, height: 1, background: "var(--border)" }} />
-          <span style={{ fontSize: "0.8rem", color: "var(--text-faint)" }}>Already have an account?</span>
-          <div style={{ flex: 1, height: 1, background: "var(--border)" }} />
+        {/* Sign in link */}
+        <div className="flex items-center gap-4 my-6">
+          <div className="flex-1 h-px bg-slate-200" />
+          <span className="text-[0.8rem] text-slate-400">Already have an account?</span>
+          <div className="flex-1 h-px bg-slate-200" />
         </div>
 
-        <Link href="/student/login" id="student-reg-login-link"
-          style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "48px", borderRadius: "var(--radius-md)", border: "1.5px solid var(--border)", color: "var(--text-secondary)", textDecoration: "none", fontSize: "0.92rem", fontWeight: 500, transition: "all 0.2s" }}
-          onMouseEnter={(e) => { (e.currentTarget as HTMLAnchorElement).style.borderColor = color; (e.currentTarget as HTMLAnchorElement).style.color = color; }}
-          onMouseLeave={(e) => { (e.currentTarget as HTMLAnchorElement).style.borderColor = "var(--border)"; (e.currentTarget as HTMLAnchorElement).style.color = "var(--text-secondary)"; }}>
+        <Link href="/student/login" id="student-reg-login-link" className="flex items-center justify-center gap-2 h-12 rounded-md border border-slate-200 text-slate-600 text-[0.92rem] font-medium transition-all duration-200 hover:border-[#6c63ff] hover:text-[#6c63ff] hover:bg-slate-50 no-underline">
           Sign in to existing account
         </Link>
 
-        <p style={{ textAlign: "center", marginTop: "1.25rem", fontSize: "0.82rem", color: "var(--text-faint)" }}>
+        <p className="text-center mt-5 text-[0.82rem] text-slate-400">
           Are you a teacher?{" "}
-          <Link href="/teacher/register" style={{ color: "var(--teacher)", textDecoration: "none", fontWeight: 500 }}>Teacher sign-up →</Link>
+          <Link href="/teacher/register" className="text-[#6c63ff] font-medium no-underline hover:underline">
+            Teacher sign-up →
+          </Link>
         </p>
       </div>
     </AuthCard>
@@ -163,12 +227,10 @@ function getPasswordStrength(pw: string): { score: number; label: string; color:
   return { score, ...map[score] };
 }
 
-const labelStyle: React.CSSProperties = { display: "block", fontSize: "0.83rem", fontWeight: 500, color: "var(--text-secondary)", marginBottom: "0.45rem" };
-const inputStyle: React.CSSProperties = { width: "100%", height: "48px", padding: "0 1rem", background: "var(--bg-surface)", border: "1.5px solid var(--border)", borderRadius: "var(--radius-md)", color: "var(--text-primary)", fontSize: "0.95rem", outline: "none", transition: "border-color 0.2s, box-shadow 0.2s", fontFamily: "inherit" };
-const eyeButtonStyle: React.CSSProperties = { position: "absolute", right: "1rem", top: "50%", transform: "translateY(-50%)", background: "none", border: "none", cursor: "pointer", color: "var(--text-muted)", display: "flex", alignItems: "center", padding: 0 };
+// ─── Shared micro-components & styles ────────────────────────────────────────
 
-function Spinner() {
-  return <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round" style={{ animation: "spin 0.8s linear infinite" }}><path d="M12 2a10 10 0 110 20A10 10 0 0112 2z" opacity="0.25" /><path d="M12 2a10 10 0 0110 10" /></svg>;
+function Spinner({ color }: { color?: string }) {
+  return <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={color || "white"} strokeWidth="2.5" strokeLinecap="round" style={{ animation: "spin 0.8s linear infinite" }}><path d="M12 2a10 10 0 110 20A10 10 0 0112 2z" opacity="0.25" /><path d="M12 2a10 10 0 0110 10" /></svg>;
 }
 function EyeOn() {
   return <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" /></svg>;
