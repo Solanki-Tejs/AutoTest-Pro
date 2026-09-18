@@ -9,6 +9,7 @@ import {
   ClassPreview,
   Membership,
 } from "@/app/lib/classes";
+import { fetchSyllabusList, downloadSyllabus, viewSyllabus, SyllabusItem } from "@/app/lib/syllabus";
 import { useRouter } from "next/navigation";
 
 type Tab = "join" | "my-classes" | "profile";
@@ -18,6 +19,7 @@ export default function StudentDashboard() {
   const [user, setUser] = useState<UserResponse | null>(null);
   const [token, setToken] = useState<string | null>(null);
   const [tab, setTab] = useState<Tab>("join");
+  const [selectedClass, setSelectedClass] = useState<Membership | null>(null);
 
   const [memberships, setMemberships] = useState<Membership[]>([]);
   const [memLoading, setMemLoading] = useState(false);
@@ -287,7 +289,9 @@ export default function StudentDashboard() {
         )}
 
         {/* ── My Classes Tab ── */}
-        {tab === "my-classes" && (
+        {tab === "my-classes" && selectedClass ? (
+          <StudentClassDetailView m={selectedClass} onBack={() => setSelectedClass(null)} />
+        ) : tab === "my-classes" && (
           <div className="animate-fade-up">
             <div className="mb-8">
               <h1 className="text-[1.8rem] font-bold text-slate-900 tracking-tight mb-1">My Classes</h1>
@@ -311,7 +315,7 @@ export default function StudentDashboard() {
                   <>
                     <SectionLabel label="Enrolled" color="text-green-600" bg="bg-green-600" />
                     <div className="grid grid-cols-[repeat(auto-fill,minmax(300px,1fr))] gap-5 mb-8">
-                      {approvedClasses.map((m, i) => <MembershipCard key={m.id} m={m} delay={i * 0.07} />)}
+                      {approvedClasses.map((m, i) => <MembershipCard key={m.id} m={m} delay={i * 0.07} onSelect={() => setSelectedClass(m)} />)}
                     </div>
                   </>
                 )}
@@ -371,7 +375,7 @@ function SectionLabel({ label, color, bg }: { label: string; color: string; bg: 
   );
 }
 
-function MembershipCard({ m, delay }: { m: Membership; delay: number }) {
+function MembershipCard({ m, delay, onSelect }: { m: Membership; delay: number; onSelect?: () => void }) {
   const isApproved = m.status === "approved";
   const isPending = m.status === "pending";
   const statusColors = {
@@ -384,7 +388,10 @@ function MembershipCard({ m, delay }: { m: Membership; delay: number }) {
 
   return (
     <div
-      className="animate-fade-up bg-white border border-slate-200 rounded-xl p-6 relative overflow-hidden shadow-sm hover:shadow-md transition-shadow duration-200"
+      onClick={isApproved && onSelect ? onSelect : undefined}
+      className={`animate-fade-up bg-white border border-slate-200 rounded-xl p-6 relative overflow-hidden shadow-sm transition-all duration-200 ${
+        isApproved && onSelect ? "hover:shadow-md hover:border-green-300 cursor-pointer" : "hover:shadow-md"
+      }`}
       style={{ animationDelay: `${delay}s` }}
     >
       <div className={`absolute top-0 left-0 bottom-0 w-1 ${statusColors.bg} rounded-l-md`} />
@@ -407,6 +414,104 @@ function StatBlock({ label, value, color }: { label: string; value: number; colo
     <div className="text-center">
       <div className={`text-[1.8rem] font-bold tracking-tight ${color}`}>{value}</div>
       <div className="text-[0.75rem] text-slate-500 mt-0.5 uppercase tracking-wider">{label}</div>
+    </div>
+  );
+}
+
+function StudentClassDetailView({ m, onBack }: { m: Membership; onBack: () => void }) {
+  const [syllabusList, setSyllabusList] = useState<SyllabusItem[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    fetchSyllabusList(m.class_id)
+      .then(setSyllabusList)
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, [m.class_id]);
+
+  return (
+    <div className="animate-fade-in">
+      <button onClick={onBack} className="mb-6 flex items-center gap-2 text-slate-500 hover:text-slate-900 transition-colors font-medium">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline></svg>
+        Back to Dashboard
+      </button>
+
+      <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-8 mb-8 relative overflow-hidden">
+        <div className="absolute top-0 left-0 right-0 h-2 bg-gradient-to-r from-green-500 to-green-400" />
+        <div className="flex items-start justify-between">
+          <div>
+            <h1 className="text-[2rem] font-bold text-slate-900 tracking-tight leading-tight mb-2">
+              {m.class_name}
+            </h1>
+            <p className="text-slate-500 text-[1.1rem]">by {m.teacher_name}</p>
+          </div>
+        </div>
+      </div>
+
+      <div className="mb-8">
+        <div className="flex items-center gap-3 mb-6 border-b border-slate-200">
+          <div className="px-4 py-3 border-b-2 border-green-500 text-green-700 font-bold text-[0.95rem]">
+            Syllabus
+          </div>
+        </div>
+
+        {loading ? (
+          <div className="bg-white border border-slate-200 rounded-xl p-8 text-center shadow-sm">
+            <div className="w-7 h-7 border-4 border-slate-200 border-t-green-500 rounded-full animate-spin mx-auto mb-3" />
+            <p className="text-slate-500 text-[0.88rem]">Loading syllabus…</p>
+          </div>
+        ) : syllabusList.length === 0 ? (
+          <div className="bg-white border border-slate-200 rounded-xl p-10 flex flex-col items-center justify-center text-center shadow-sm">
+            <div className="text-[3rem] mb-3">📚</div>
+            <h3 className="text-lg font-bold text-slate-900 mb-1">No syllabus yet</h3>
+            <p className="text-slate-500 text-[0.85rem]">
+              The teacher has not uploaded any syllabus material for this class yet.
+            </p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 gap-3">
+            {syllabusList.map((s) => {
+              const isPdf = s.file_ref.toLowerCase().endsWith('.pdf');
+              return (
+                <div key={s.id} className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm hover:shadow-md hover:border-slate-300 transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                  <div className="flex items-start gap-4">
+                    <div className={`w-12 h-12 rounded-lg flex items-center justify-center text-2xl shrink-0 ${isPdf ? 'bg-red-50 text-red-500' : 'bg-slate-100 text-slate-400'}`}>
+                      {isPdf ? '📕' : '📄'}
+                    </div>
+                    <div>
+                      <h4 className="font-bold text-slate-900 text-[0.95rem] mb-0.5">{s.title}</h4>
+                      <p className="text-slate-500 text-[0.8rem] mb-1 font-mono">{s.file_ref.split('/').pop()}</p>
+                      <p className="text-slate-400 text-[0.75rem]">
+                        Uploaded {new Date(s.created_at).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}
+                      </p>
+                      {!isPdf && <p className="text-amber-600 text-[0.75rem] font-semibold mt-1">Unsupported file format</p>}
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0 self-end sm:self-auto">
+                    <button
+                      onClick={() => viewSyllabus(s.id)}
+                      disabled={!isPdf}
+                      className={`px-3.5 py-1.5 rounded-md border text-[0.8rem] font-semibold transition-colors ${
+                        isPdf 
+                          ? 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50 hover:border-slate-300' 
+                          : 'border-slate-100 bg-slate-50 text-slate-400 cursor-not-allowed'
+                      }`}
+                    >
+                      View PDF
+                    </button>
+                    <button
+                      onClick={() => downloadSyllabus(s.id, s.title)}
+                      className="px-3.5 py-1.5 rounded-md border border-slate-200 bg-white text-slate-700 text-[0.8rem] font-semibold hover:bg-slate-50 hover:border-slate-300 transition-colors"
+                    >
+                      Download
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
     </div>
   );
 }

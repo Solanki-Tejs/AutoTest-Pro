@@ -1,3 +1,6 @@
+#agent-skills
+/.agent/
+task.md
 # dependencies
 node_modules/
 /.pnp
@@ -61,3 +64,6 @@ backend/__pycache__/
 backend/.pytest_cache/
 
 skills/
+
+#upload syllabus folder
+backend/storage/*/

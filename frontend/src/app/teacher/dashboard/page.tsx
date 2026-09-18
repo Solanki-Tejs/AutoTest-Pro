@@ -15,6 +15,8 @@ import {
   JoinRequest,
   EnrolledStudent,
 } from "@/app/lib/classes";
+import { uploadSyllabus, fetchSyllabusList, deleteSyllabus, getDownloadUrl, downloadSyllabus, viewSyllabus, SyllabusItem } from "@/app/lib/syllabus";
+import SyllabusUploadModal from "@/app/components/SyllabusUploadModal";
 import { useRouter } from "next/navigation";
 
 type Tab = "classes" | "requests" | "profile";
@@ -396,6 +398,36 @@ function ClassDetailView({
   onDeleteClass: () => void;
 }) {
   const [copied, setCopied] = useState<"code" | "link" | null>(null);
+  
+  const [syllabusList, setSyllabusList] = useState<SyllabusItem[]>([]);
+  const [syllabusLoading, setSyllabusLoading] = useState(true);
+  const [showSyllabusUpload, setShowSyllabusUpload] = useState(false);
+
+  const loadSyllabus = useCallback(async () => {
+    setSyllabusLoading(true);
+    try {
+      const data = await fetchSyllabusList(cls.id);
+      setSyllabusList(data);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setSyllabusLoading(false);
+    }
+  }, [cls.id]);
+
+  useEffect(() => {
+    loadSyllabus();
+  }, [loadSyllabus]);
+
+  const handleDeleteSyllabus = async (id: string) => {
+    if (!confirm("Are you sure you want to delete this syllabus?")) return;
+    try {
+      await deleteSyllabus(id);
+      loadSyllabus();
+    } catch (err) {
+      alert("Failed to delete syllabus");
+    }
+  };
 
   function copyCode() {
     navigator.clipboard.writeText(cls.join_code);
@@ -408,7 +440,6 @@ function ClassDetailView({
 
   const futureFeatures = [
     { icon: "📝", label: "Exams", desc: "Create and manage tests for this class" },
-    { icon: "📚", label: "Syllabus", desc: "Upload and organise course material" },
     { icon: "📊", label: "Analytics", desc: "View student performance and progress" },
   ];
 
@@ -515,6 +546,94 @@ function ClassDetailView({
             </>
           )}
 
+          {/* Syllabus Section */}
+          <div className="flex items-center justify-between mb-4">
+            <SectionHeader
+              icon={<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>}
+              title="Syllabus"
+              badge={`${syllabusList.length} files`}
+              badgeColor="text-[#2563eb]"
+              badgeBg="bg-[#2563eb]/10 border-[#2563eb]/30"
+            />
+            <button
+              onClick={() => setShowSyllabusUpload(true)}
+              className="px-3 py-1.5 rounded-md bg-[#2563eb] text-white text-[0.8rem] font-semibold hover:bg-[#1d4ed8] transition-colors"
+            >
+              + Upload Syllabus
+            </button>
+          </div>
+          
+          <div className="mb-8">
+            {syllabusLoading ? (
+              <div className="bg-white border border-slate-200 rounded-xl p-8 text-center shadow-sm">
+                <div className="w-7 h-7 border-4 border-slate-200 border-t-[#2563eb] rounded-full animate-spin mx-auto mb-3" />
+                <p className="text-slate-500 text-[0.88rem]">Loading syllabus…</p>
+              </div>
+            ) : syllabusList.length === 0 ? (
+              <div className="bg-white border border-slate-200 rounded-xl p-10 flex flex-col items-center justify-center text-center shadow-sm">
+                <div className="text-[3rem] mb-3">📚</div>
+                <h3 className="text-lg font-bold text-slate-900 mb-1">No syllabus yet</h3>
+                <p className="text-slate-500 text-[0.85rem] mb-4 max-w-sm">
+                  Upload a syllabus to share course material with your students.
+                </p>
+                <button
+                  onClick={() => setShowSyllabusUpload(true)}
+                  className="px-4 py-2 rounded-lg bg-slate-100 text-slate-700 font-semibold hover:bg-slate-200 transition-colors text-[0.85rem]"
+                >
+                  Upload Syllabus
+                </button>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 gap-3">
+                {syllabusList.map((s) => {
+                  const isPdf = s.file_ref.toLowerCase().endsWith('.pdf');
+                  return (
+                    <div key={s.id} className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm hover:shadow-md hover:border-slate-300 transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                      <div className="flex items-start gap-4">
+                        <div className={`w-12 h-12 rounded-lg flex items-center justify-center text-2xl shrink-0 ${isPdf ? 'bg-red-50 text-red-500' : 'bg-slate-100 text-slate-400'}`}>
+                          {isPdf ? '📕' : '📄'}
+                        </div>
+                        <div>
+                          <h4 className="font-bold text-slate-900 text-[0.95rem] mb-0.5">{s.title}</h4>
+                          <p className="text-slate-500 text-[0.8rem] mb-1 font-mono">{s.file_ref.split('/').pop()}</p>
+                          <p className="text-slate-400 text-[0.75rem]">
+                            Uploaded {new Date(s.created_at).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}
+                          </p>
+                          {!isPdf && <p className="text-amber-600 text-[0.75rem] font-semibold mt-1">Unsupported file format</p>}
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2 shrink-0 self-end sm:self-auto">
+                        <button
+                          onClick={() => viewSyllabus(s.id)}
+                          disabled={!isPdf}
+                          className={`px-3.5 py-1.5 rounded-md border text-[0.8rem] font-semibold transition-colors ${
+                            isPdf 
+                              ? 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50 hover:border-slate-300' 
+                              : 'border-slate-100 bg-slate-50 text-slate-400 cursor-not-allowed'
+                          }`}
+                        >
+                          View PDF
+                        </button>
+                        <button
+                          onClick={() => downloadSyllabus(s.id, s.title)}
+                          className="px-3.5 py-1.5 rounded-md border border-slate-200 bg-white text-slate-700 text-[0.8rem] font-semibold hover:bg-slate-50 hover:border-slate-300 transition-colors"
+                        >
+                          Download
+                        </button>
+                        <button
+                          onClick={() => handleDeleteSyllabus(s.id)}
+                          className="px-3.5 py-1.5 rounded-md border border-red-200 bg-red-50 text-red-600 text-[0.8rem] font-semibold hover:bg-red-100 transition-colors"
+                        >
+                          Delete
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
           {/* Coming soon features */}
           <SectionHeader
             icon={<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" /></svg>}
@@ -568,6 +687,13 @@ function ClassDetailView({
           </div>
         </div>
       </div>
+
+      <SyllabusUploadModal 
+        isOpen={showSyllabusUpload} 
+        onClose={() => setShowSyllabusUpload(false)} 
+        onSuccess={loadSyllabus}
+        classId={cls.id}
+      />
     </div>
   );
 }
