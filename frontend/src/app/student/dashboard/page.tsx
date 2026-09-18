@@ -116,8 +116,8 @@ export default function StudentDashboard() {
       <aside className="w-[260px] min-h-screen bg-white border-r border-slate-200 flex flex-col py-6 px-4 fixed top-0 left-0 bottom-0 z-10">
         {/* Logo */}
         <div className="flex items-center gap-2.5 px-2 mb-10">
-          <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-[#6c63ff] to-[#4ec078] flex items-center justify-center shrink-0">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 11l3 3L22 4" /><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11" /></svg>
+          <div className="w-8 h-8 relative flex items-center justify-center shrink-0">
+            <img src="/logo.png" alt="AutoTest Pro Logo" className="w-full h-full object-contain" />
           </div>
           <span className="text-[1.05rem] font-bold text-slate-900 tracking-tight">AutoTest Pro</span>
         </div>
@@ -174,7 +174,7 @@ export default function StudentDashboard() {
       </aside>
 
       {/* ── Main Content ── */}
-      <div className="ml-[260px] p-8 min-h-screen relative z-[1]">
+      <div className="p-8 min-h-screen relative z-[1]" style={{ marginLeft: "260px" }}>
 
         {/* ── Join by Code Tab ── */}
         {tab === "join" && (

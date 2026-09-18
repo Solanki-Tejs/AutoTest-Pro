@@ -8,169 +8,130 @@ export default function LandingPage() {
   const [hovered, setHovered] = useState<"teacher" | "student" | null>(null);
 
   return (
-    <main className="min-h-screen flex flex-col items-center justify-center relative overflow-hidden p-8 bg-slate-50">
-      {/* Logo */}
-      <div className="animate-fade-up text-center mb-14">
-        <div className="inline-flex items-center gap-3 mb-4">
-          <div className="w-10 h-10 relative flex items-center justify-center">
-            <Image
-              src="/logo.png"
-              alt="AutoTest Pro Logo"
-              width={40}
-              height={40}
-              className="object-contain"
-            />
-          </div>
-          <span className="text-xl font-bold text-slate-900 tracking-tight">
+    <main className="min-h-screen flex flex-col bg-paper relative overflow-hidden">
+      {/* Top Border / Nav Bar placeholder */}
+      <div className="h-16 border-b border-grid flex items-center justify-between px-8 bg-surface">
+        <div className="flex items-center gap-3">
+          <Image
+            src="/logo.png"
+            alt="AutoTest Pro Logo"
+            width={24}
+            height={24}
+            className="object-contain"
+          />
+          <span className="font-mono text-sm tracking-wider uppercase text-graphite font-semibold">
             AutoTest Pro
           </span>
         </div>
-        <h1 className="animate-fade-up stagger-1 text-[clamp(2rem,5vw,3.25rem)] font-bold text-slate-900 tracking-tight leading-tight mb-3">
-          Smart assessments,<br />
-          <span className="text-[#22579b]">
-            built for everyone.
-          </span>
+        <div className="font-mono text-xs text-graphite/60 uppercase tracking-widest hidden sm:block">
+          Assessment Platform
+        </div>
+      </div>
+
+      {/* Hero Section */}
+      <div className="flex-1 flex flex-col items-center justify-center p-8 lg:p-16 text-center border-b border-grid">
+        <h1 className="animate-fade-up font-serif text-[clamp(2.5rem,8vw,5.5rem)] leading-[1.05] tracking-tight text-graphite max-w-4xl mx-auto mb-6">
+          The standard for <br /> smart assessments.
         </h1>
-        <p className="animate-fade-up stagger-2 text-slate-600 text-lg max-w-[480px] mx-auto">
-          Choose your role to get started with AutoTest Pro.
+        <p className="animate-fade-up stagger-1 text-graphite/70 text-lg sm:text-xl max-w-2xl mx-auto font-sans">
+          A definitive platform for educators to build rigorous tests and students to prove their knowledge. Select your role to begin.
         </p>
       </div>
 
-      {/* Role cards */}
-      <div className="animate-fade-up stagger-3 flex gap-6 flex-wrap justify-center w-full max-w-[780px]">
-        {/* Teacher Card */}
-        <RoleCard
+      {/* Split Grid for Roles */}
+      <div className="flex flex-col md:flex-row w-full flex-1">
+        {/* Teacher Quadrant */}
+        <RoleQuadrant
           role="teacher"
           hovered={hovered}
           setHovered={setHovered}
           href="/teacher/login"
-          title="I'm a Teacher"
-          description="Create and manage tests, track student performance, and build assessments effortlessly."
-          icon={
-            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2" />
-              <circle cx="9" cy="7" r="4" />
-              <path d="M23 21v-2a4 4 0 00-3-3.87" />
-              <path d="M16 3.13a4 4 0 010 7.75" />
-            </svg>
-          }
-          badge="Educator"
+          title="Educator Portal"
+          description="Design assessments, manage classes, and analyze performance data with precision."
+          number="01."
+          brandColor="var(--color-teacher)"
+          isLeft={true}
         />
 
-        {/* Student Card */}
-        <RoleCard
+        {/* Student Quadrant */}
+        <RoleQuadrant
           role="student"
           hovered={hovered}
           setHovered={setHovered}
           href="/student/login"
-          title="I'm a Student"
-          description="Take tests, review your results, and track your academic progress in one place."
-          icon={
-            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M22 10v6M2 10l10-5 10 5-10 5z" />
-              <path d="M6 12v5c3 3 9 3 12 0v-5" />
-            </svg>
-          }
-          badge="Learner"
+          title="Student Portal"
+          description="Access assignments, submit answers, and track your academic progress over time."
+          number="02."
+          brandColor="var(--color-student)"
+          isLeft={false}
         />
       </div>
 
-      {/* Footer */}
-      <p className="animate-fade-up stagger-5 mt-12 text-slate-500 text-sm">
-        © {new Date().getFullYear()} AutoTest Pro. All rights reserved.
-      </p>
+      {/* Footer bar */}
+      <div className="h-12 border-t border-grid flex items-center justify-between px-8 bg-surface text-xs font-mono uppercase tracking-widest text-graphite/50">
+        <span>© {new Date().getFullYear()}</span>
+        <span>ID: AT-PRO-SYS</span>
+      </div>
     </main>
   );
 }
 
-// ─── Role Card ────────────────────────────────────────────────────────────────
+// ─── Role Quadrant ────────────────────────────────────────────────────────────
 
-interface RoleCardProps {
+interface RoleQuadrantProps {
   role: "teacher" | "student";
   hovered: "teacher" | "student" | null;
   setHovered: (v: "teacher" | "student" | null) => void;
   href: string;
   title: string;
   description: string;
-  icon: React.ReactNode;
-  badge: string;
+  number: string;
+  brandColor: string;
+  isLeft: boolean;
 }
 
-function RoleCard({
-  role, hovered, setHovered, href, title, description, icon, badge,
-}: RoleCardProps) {
+function RoleQuadrant({
+  role, hovered, setHovered, href, title, description, number, brandColor, isLeft
+}: RoleQuadrantProps) {
   const isHovered = hovered === role;
-  
-  // Use distinct colors based on the role
-  const brandColor = role === "teacher" ? "#2563eb" : "#6c63ff";
 
   return (
     <Link
       href={href}
-      id={`role-card-${role}`}
       onMouseEnter={() => setHovered(role)}
       onMouseLeave={() => setHovered(null)}
-      className="flex flex-col items-start gap-4 p-8 bg-white border border-slate-200 rounded-xl no-underline flex-1 min-w-[300px] max-w-[360px] cursor-pointer transition-colors duration-300 shadow-sm hover:bg-slate-50"
+      className={`relative flex-1 flex flex-col p-8 lg:p-12 min-h-[320px] transition-colors duration-500 hover-trigger border-b md:border-b-0 ${isLeft ? "md:border-r border-grid" : ""
+        }`}
       style={{
-        borderColor: isHovered ? brandColor : undefined,
+        backgroundColor: isHovered ? brandColor : "var(--color-surface)",
+        color: isHovered ? "white" : "var(--color-graphite)"
       }}
     >
-      {/* Badge */}
-      <span
-        className="text-xs font-semibold tracking-wide uppercase px-2.5 py-0.5 rounded-full border transition-colors duration-300 inline-block"
-        style={{
-          color: isHovered ? brandColor : "var(--color-slate-500)",
-          borderColor: isHovered ? brandColor : "var(--color-slate-200)",
-        }}
-      >
-        {badge}
-      </span>
+      {/* Background Bubble Effect */}
+      <div className="absolute inset-0 bubble-bg pointer-events-none" />
 
-      {/* Icon */}
-      <div
-        className="w-16 h-16 rounded-lg border flex items-center justify-center transition-colors duration-300"
-        style={{
-          backgroundColor: isHovered ? brandColor : "var(--color-slate-50)",
-          borderColor: isHovered ? brandColor : "var(--color-slate-200)",
-          color: isHovered ? "white" : "var(--color-slate-500)",
-        }}
-      >
-        {icon}
-      </div>
+      <div className="relative z-10 flex flex-col h-full">
+        {/* Number identifier */}
+        <span className="font-mono text-sm tracking-widest mb-12 block" style={{ opacity: isHovered ? 0.9 : 0.4 }}>
+          {number}
+        </span>
 
-      {/* Text */}
-      <div>
-        <h2 className="text-xl font-bold text-slate-900 tracking-tight mb-2 transition-colors duration-300"
-            style={{ color: isHovered ? brandColor : undefined }}>
-          {title}
-        </h2>
-        <p className="text-sm text-slate-600 leading-relaxed">
-          {description}
-        </p>
-      </div>
+        <div className="mt-auto">
+          <h2 className="font-serif text-4xl mb-3 transition-colors">
+            {title}
+          </h2>
+          <p className="font-sans text-base max-w-sm transition-colors leading-relaxed" style={{ color: isHovered ? "rgba(255,255,255,0.9)" : "var(--color-graphite)" }}>
+            {description}
+          </p>
 
-      {/* Arrow */}
-      <div
-        className="mt-auto flex items-center gap-1.5 text-sm font-semibold transition-all duration-300"
-        style={{
-          color: isHovered ? brandColor : "var(--color-slate-500)",
-        }}
-      >
-        Sign in
-        <svg
-          width="16"
-          height="16"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="2.5"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          className="transition-transform duration-300"
-          style={{ transform: isHovered ? "translateX(4px)" : "translateX(0)" }}
-        >
-          <path d="M5 12h14M12 5l7 7-7 7" />
-        </svg>
+          <div className="mt-8 flex items-center gap-3 font-mono text-sm tracking-widest uppercase transition-all duration-300"
+            style={{ transform: isHovered ? "translateX(8px)" : "translateX(0)" }}>
+            Authenticate
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M5 12h14M12 5l7 7-7 7" />
+            </svg>
+          </div>
+        </div>
       </div>
     </Link>
   );

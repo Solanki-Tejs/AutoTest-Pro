@@ -1,46 +1,119 @@
 @import "tailwindcss";
 
 @theme {
-  --color-brand: #22579b;
-  --color-teacher: #2563eb;
-  --color-student: #6c63ff;
-  --color-accent: #4ec078;
+  --color-paper: #F8F9FA;
+  --color-graphite: #1A1A1A;
+  --color-teacher: #0044FF;
+  --color-student: #FF3366;
+  --color-grid: #E9ECEF;
+  --color-surface: #FFFFFF;
+
   --font-inter: "Inter", system-ui, sans-serif;
+  --font-instrument: var(--font-instrument), "Times New Roman", serif;
+  --font-mono: var(--font-mono), monospace;
 }
 
 /* ─── Base Reset ────────────────────────────────────────────────── */
-*, *::before, *::after {
+/* *, *::before, *::after {
   box-sizing: border-box;
   margin: 0;
   padding: 0;
-}
+} */
 
-html, body {
+html,
+body {
   height: 100%;
-  background-color: var(--color-slate-50);
-  color: var(--color-slate-900);
+  background-color: var(--color-paper);
+  color: var(--color-graphite);
   font-family: var(--font-inter);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   overflow-x: hidden;
 }
 
-/* ─── Scrollbar ─────────────────────────────────────────────────── */
-::-webkit-scrollbar { width: 6px; }
-::-webkit-scrollbar-track { background: var(--color-slate-50); }
-::-webkit-scrollbar-thumb { background: var(--color-slate-200); border-radius: 3px; }
-
-/* ─── Utility Classes ───────────────────────────────────────────── */
-.animate-fade-up { animation: fade-up 0.4s cubic-bezier(0.16, 1, 0.3, 1) both; }
-
-@keyframes fade-up {
-  from { opacity: 0; transform: translateY(12px); }
-  to   { opacity: 1; transform: translateY(0); }
+/* ─── Typography ────────────────────────────────────────────────── */
+h1,
+h2,
+h3,
+h4,
+h5,
+h6,
+.font-serif {
+  font-family: var(--font-instrument);
 }
 
-.stagger-1 { animation-delay: 0.05s; }
-.stagger-2 { animation-delay: 0.10s; }
-.stagger-3 { animation-delay: 0.15s; }
-.stagger-4 { animation-delay: 0.20s; }
-.stagger-5 { animation-delay: 0.25s; }
+.font-mono {
+  font-family: var(--font-mono);
+}
 
+.font-sans {
+  font-family: var(--font-inter);
+}
+
+/* ─── Scrollbar ─────────────────────────────────────────────────── */
+::-webkit-scrollbar {
+  width: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--color-paper);
+  border-left: 1px solid var(--color-grid);
+}
+
+::-webkit-scrollbar-thumb {
+  background: #D1D5DB;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #9CA3AF;
+}
+
+/* ─── Utility Classes ───────────────────────────────────────────── */
+.animate-fade-up {
+  animation: fade-up 0.4s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@keyframes fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.stagger-1 {
+  animation-delay: 0.05s;
+}
+
+.stagger-2 {
+  animation-delay: 0.10s;
+}
+
+.stagger-3 {
+  animation-delay: 0.15s;
+}
+
+.stagger-4 {
+  animation-delay: 0.20s;
+}
+
+.stagger-5 {
+  animation-delay: 0.25s;
+}
+
+/* ─── Bubble Hover Effect Base ──────────────────────────────────── */
+.bubble-bg {
+  background-image: radial-gradient(circle, currentColor 1px, transparent 1px);
+  background-size: 20px 20px;
+  background-position: 0 0;
+  opacity: 0;
+  transition: opacity 0.5s ease;
+}
+
+.hover-trigger:hover .bubble-bg {
+  opacity: 0.08;
+}
