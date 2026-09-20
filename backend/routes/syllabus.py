@@ -82,10 +82,12 @@ async def list_syllabus(
     from sqlalchemy import text
     if role == "teacher":
         cls = db.execute(
-            text("SELECT id FROM classes WHERE id = :cid AND teacher_id = :tid"),
-            {"cid": class_id, "tid": user_id},
+            text("SELECT id, teacher_id FROM classes WHERE id = :cid"),
+            {"cid": class_id},
         ).first()
         if not cls:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Class not found")
+        if cls.teacher_id != user_id:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You do not own this class")
     elif role == "student":
         enrollment = db.execute(

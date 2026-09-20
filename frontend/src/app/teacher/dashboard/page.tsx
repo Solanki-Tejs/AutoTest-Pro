@@ -407,9 +407,10 @@ function ClassDetailView({
     setSyllabusLoading(true);
     try {
       const data = await fetchSyllabusList(cls.id);
-      setSyllabusList(data);
-    } catch (err) {
-      console.error(err);
+      setSyllabusList(data || []);
+    } catch (err: any) {
+      console.warn("Failed to load syllabus list:", err?.message || err);
+      setSyllabusList([]);
     } finally {
       setSyllabusLoading(false);
     }

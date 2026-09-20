@@ -1,14 +1,19 @@
+import os
 import pymupdf
 import json
+import time
 import urllib.request
 from uuid import UUID
 from sqlalchemy import text
 from services.storage_service import StorageService
 
+OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://127.0.0.1:11434").rstrip("/")
+EMBEDDING_MODEL = os.getenv("OLLAMA_EMBEDDING_MODEL", "nomic-embed-text:latest")
+
 def get_embedding(text_content: str) -> list[float]:
-    url = "http://127.0.0.1:11434/api/embeddings"
+    url = f"{OLLAMA_BASE_URL}/api/embeddings"
     data = json.dumps({
-        "model": "nomic-embed-text:latest",
+        "model": EMBEDDING_MODEL,
         "prompt": text_content
     }).encode("utf-8")
     req = urllib.request.Request(url, data=data, headers={"Content-Type": "application/json"})
@@ -24,6 +29,7 @@ def process_syllabus_pdf(syllabus_id: UUID, file_ref: str, db_factory):
     # db_factory is a function that returns a Session
     with db_factory() as db:
         try:
+            start_time = time.perf_counter()
             # 1. Clear existing chunks for this syllabus (reprocessing safety)
             db.execute(
                 text("DELETE FROM document_chunks WHERE syllabus_id = :syllabus_id"),
@@ -38,9 +44,11 @@ def process_syllabus_pdf(syllabus_id: UUID, file_ref: str, db_factory):
                 
             # 4. Extract text & Chunk
             doc = pymupdf.open(file_path)
+            num_pages = len(doc)
             
             chunks_to_insert = []
             chunk_index = 0
+            embed_calc_time = 0.0
             
             # Simple chunking params
             CHUNK_SIZE = 800
@@ -64,7 +72,9 @@ def process_syllabus_pdf(syllabus_id: UUID, file_ref: str, db_factory):
                         continue
                         
                     # Generate embedding
+                    t_emb = time.perf_counter()
                     embedding = get_embedding(chunk_text)
+                    embed_calc_time += (time.perf_counter() - t_emb)
                     if not embedding:
                         continue
                     
@@ -90,6 +100,7 @@ def process_syllabus_pdf(syllabus_id: UUID, file_ref: str, db_factory):
             
             # 5. Insert chunks
             if chunks_to_insert:
+                db_start = time.perf_counter()
                 db.execute(
                     text("""
                         INSERT INTO document_chunks (syllabus_id, chunk_index, content, page_number, embedding, metadata)
@@ -98,6 +109,17 @@ def process_syllabus_pdf(syllabus_id: UUID, file_ref: str, db_factory):
                     chunks_to_insert
                 )
                 db.commit()
+                db_time = time.perf_counter() - db_start
+            else:
+                db_time = 0.0
+
+            total_duration = time.perf_counter() - start_time
+            avg_per_chunk = (embed_calc_time / len(chunks_to_insert)) if chunks_to_insert else 0.0
+            print(
+                f"[TIMING] [Embedding] Extracted {num_pages} pages into {len(chunks_to_insert)} chunks. "
+                f"Embedding API: {embed_calc_time:.2f}s (avg: {avg_per_chunk:.3f}s/chunk), "
+                f"DB save: {db_time:.2f}s. Stage total: {total_duration:.2f}s"
+            )
             
         except Exception as e:
             db.rollback()

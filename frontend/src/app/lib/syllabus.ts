@@ -1,6 +1,6 @@
 import { getStoredToken } from "./auth";
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api";
+const API_BASE = "http://localhost:8000/api";
 
 export interface SyllabusItem {
   id: string;
@@ -40,7 +40,7 @@ export async function uploadSyllabus(
 
 export async function fetchSyllabusList(classId: number): Promise<SyllabusItem[]> {
   const token = getStoredToken();
-  if (!token) throw new Error("No auth token");
+  if (!token) return [];
 
   const res = await fetch(`${API_BASE}/classes/${classId}/syllabus`, {
     headers: {
@@ -49,7 +49,9 @@ export async function fetchSyllabusList(classId: number): Promise<SyllabusItem[]
   });
 
   if (!res.ok) {
-    throw new Error("Failed to fetch syllabus list");
+    if (res.status === 404) return [];
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.detail || `Failed to fetch syllabus list (${res.status})`);
   }
 
   return res.json();
@@ -93,7 +95,7 @@ export async function downloadSyllabus(syllabusId: string, title: string): Promi
 
   const blob = await res.blob();
   const url = window.URL.createObjectURL(blob);
-  
+
   const a = document.createElement("a");
   a.href = url;
   a.download = title;
