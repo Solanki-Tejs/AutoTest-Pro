@@ -18,4 +18,8 @@ class Settings:
     ALGORITHM = os.getenv("ALGORITHM")
     # ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES"))
 
+    # MONGODB CONFIGURATION
+    MONGO_URI = os.getenv("MONGO_URI", "mongodb://localhost:27017")
+    MONGO_DB = os.getenv("MONGO_DB", "autotest_pro")
+
 settings = Settings()

@@ -1,9 +1,9 @@
-from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, Form, File
+from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, Form, File, BackgroundTasks
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 from uuid import UUID
 
-from databases.database import get_db
+from databases.database import get_db, SessionLocal
 from routes.dependencies import get_current_user, require_roles
 from schemas.syllabus_schema import SyllabusResponse
 from services.class_service import get_student_memberships
@@ -14,6 +14,7 @@ from services.syllabus_service import (
     delete_syllabus,
 )
 from services.storage_service import StorageService
+from services.pipeline_service import run_syllabus_pipeline
 
 router = APIRouter()
 
@@ -22,6 +23,7 @@ ALLOWED_EXTENSIONS = {".pdf"}
 @router.post("/classes/{class_id}/syllabus", status_code=status.HTTP_201_CREATED, response_model=SyllabusResponse)
 async def upload_syllabus(
     class_id: int,
+    background_tasks: BackgroundTasks,
     title: str = Form(...),
     file: UploadFile = File(...),
     current_user=Depends(require_roles("teacher")),
@@ -61,6 +63,7 @@ async def upload_syllabus(
     # 4. Insert Metadata
     try:
         syllabus_data = create_syllabus(class_id, title, file_ref, db)
+        background_tasks.add_task(run_syllabus_pipeline, syllabus_data["id"], file_ref, SessionLocal)
         return syllabus_data
     except Exception as e:
         StorageService.delete_file(file_ref)
@@ -173,3 +176,79 @@ async def remove_syllabus(
     delete_syllabus(syllabus_id, db)
     
     return {"message": "Syllabus deleted successfully"}
+
+
+@router.get("/syllabus/{syllabus_id}/status")
+async def get_syllabus_status(
+    syllabus_id: UUID,
+    current_user=Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    syllabus = get_syllabus_by_id(syllabus_id, db)
+    if not syllabus:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Syllabus not found")
+        
+    class_id = syllabus["class_id"]
+    user_id = int(current_user["sub"])
+    role = current_user.get("role")
+    
+    # Verify authorization
+    from sqlalchemy import text
+    if role == "teacher":
+        cls = db.execute(
+            text("SELECT id FROM classes WHERE id = :cid AND teacher_id = :tid"),
+            {"cid": class_id, "tid": user_id},
+        ).first()
+        if not cls:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You do not have access to this class")
+    elif role == "student":
+        enrollment = db.execute(
+            text("SELECT id FROM class_enrollments WHERE class_id = :cid AND student_id = :sid AND status = 'approved'"),
+            {"cid": class_id, "sid": user_id},
+        ).first()
+        if not enrollment:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You do not have access to this class")
+    else:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Unauthorized role")
+        
+    return {
+        "uploaded_syllabus_id": syllabus["id"],
+        "status": syllabus.get("status", "PENDING"),
+        "stage": syllabus.get("stage", "PENDING"),
+        "error": syllabus.get("error")
+    }
+
+@router.post("/syllabus/{syllabus_id}/retry")
+async def retry_syllabus(
+    syllabus_id: UUID,
+    background_tasks: BackgroundTasks,
+    current_user=Depends(require_roles("teacher")),
+    db: Session = Depends(get_db),
+):
+    syllabus = get_syllabus_by_id(syllabus_id, db)
+    if not syllabus:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Syllabus not found")
+        
+    class_id = syllabus["class_id"]
+    user_id = int(current_user["sub"])
+    
+    # Verify authorization
+    from sqlalchemy import text
+    cls = db.execute(
+        text("SELECT id FROM classes WHERE id = :cid AND teacher_id = :tid"),
+        {"cid": class_id, "tid": user_id},
+    ).first()
+    if not cls:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You do not have access to this class")
+        
+    # Reset status
+    db.execute(
+        text("UPDATE syllabus SET status = 'PENDING', stage = 'PENDING', error = NULL WHERE id = :sid"),
+        {"sid": syllabus_id}
+    )
+    db.commit()
+    
+    # Start pipeline
+    background_tasks.add_task(run_syllabus_pipeline, syllabus["id"], syllabus["file_ref"], SessionLocal)
+    
+    return {"message": "Pipeline retry initiated"}
