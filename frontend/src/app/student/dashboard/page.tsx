@@ -484,6 +484,22 @@ function StudentClassDetailView({ m, onBack }: { m: Membership; onBack: () => vo
                       <p className="text-slate-400 text-[0.75rem]">
                         Uploaded {new Date(s.created_at).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}
                       </p>
+
+                      {/* Ingestion Status */}
+                      <div className="mt-2 flex items-center gap-2">
+                        {s.status === "completed" ? (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[0.72rem] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                            Knowledge Ready
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[0.72rem] font-semibold bg-blue-50 text-blue-700 border border-blue-200">
+                            <span className="w-2 h-2 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
+                            Processing Material
+                          </span>
+                        )}
+                      </div>
+
                       {!isPdf && <p className="text-amber-600 text-[0.75rem] font-semibold mt-1">Unsupported file format</p>}
                     </div>
                   </div>

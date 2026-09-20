@@ -5,7 +5,8 @@ from fastapi import UploadFile
 from pathlib import Path
 from uuid import uuid4
 
-STORAGE_DIR = Path("storage")
+STORAGE_DIR = Path(__file__).resolve().parent.parent / "storage"
+STORAGE_DIR.mkdir(parents=True, exist_ok=True)
 
 class StorageService:
     @staticmethod
@@ -13,6 +14,7 @@ class StorageService:
         class_dir = STORAGE_DIR / str(class_id)
         class_dir.mkdir(parents=True, exist_ok=True)
         return class_dir
+
 
     @staticmethod
     def _sanitize_filename(filename: str) -> str:
@@ -49,6 +51,11 @@ class StorageService:
         file_path = STORAGE_DIR / file_ref
         if file_path.exists() and file_path.is_file():
             return file_path
+        
+        cwd_fallback = Path("storage") / file_ref
+        if cwd_fallback.exists() and cwd_fallback.is_file():
+            return cwd_fallback
+            
         return None
 
     @staticmethod

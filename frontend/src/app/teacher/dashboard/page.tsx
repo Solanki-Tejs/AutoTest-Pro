@@ -15,7 +15,7 @@ import {
   JoinRequest,
   EnrolledStudent,
 } from "@/app/lib/classes";
-import { uploadSyllabus, fetchSyllabusList, deleteSyllabus, getDownloadUrl, downloadSyllabus, viewSyllabus, SyllabusItem } from "@/app/lib/syllabus";
+import { uploadSyllabus, fetchSyllabusList, retrySyllabus, deleteSyllabus, getDownloadUrl, downloadSyllabus, viewSyllabus, SyllabusItem } from "@/app/lib/syllabus";
 import SyllabusUploadModal from "@/app/components/SyllabusUploadModal";
 import { useRouter } from "next/navigation";
 
@@ -402,16 +402,17 @@ function ClassDetailView({
   const [syllabusList, setSyllabusList] = useState<SyllabusItem[]>([]);
   const [syllabusLoading, setSyllabusLoading] = useState(true);
   const [showSyllabusUpload, setShowSyllabusUpload] = useState(false);
+  const [retryingId, setRetryingId] = useState<string | null>(null);
 
-  const loadSyllabus = useCallback(async () => {
-    setSyllabusLoading(true);
+  const loadSyllabus = useCallback(async (isPolling = false) => {
+    if (!isPolling) setSyllabusLoading(true);
     try {
       const data = await fetchSyllabusList(cls.id);
       setSyllabusList(data);
     } catch (err) {
       console.error(err);
     } finally {
-      setSyllabusLoading(false);
+      if (!isPolling) setSyllabusLoading(false);
     }
   }, [cls.id]);
 
@@ -419,8 +420,35 @@ function ClassDetailView({
     loadSyllabus();
   }, [loadSyllabus]);
 
+  // Polling: refresh every 3 seconds if any syllabus is actively processing
+  useEffect(() => {
+    const hasActiveJob = syllabusList.some(
+      (s) => s.status && !["completed", "failed"].includes(s.status)
+    );
+
+    if (!hasActiveJob) return;
+
+    const interval = setInterval(() => {
+      loadSyllabus(true);
+    }, 3000);
+
+    return () => clearInterval(interval);
+  }, [syllabusList, loadSyllabus]);
+
+  const handleRetrySyllabus = async (id: string) => {
+    setRetryingId(id);
+    try {
+      await retrySyllabus(id);
+      await loadSyllabus(true);
+    } catch (err: any) {
+      alert(err.message || "Failed to retry syllabus ingestion");
+    } finally {
+      setRetryingId(null);
+    }
+  };
+
   const handleDeleteSyllabus = async (id: string) => {
-    if (!confirm("Are you sure you want to delete this syllabus?")) return;
+    if (!confirm("Are you sure you want to delete this syllabus and its processed knowledge?")) return;
     try {
       await deleteSyllabus(id);
       loadSyllabus();
@@ -599,6 +627,42 @@ function ClassDetailView({
                           <p className="text-slate-400 text-[0.75rem]">
                             Uploaded {new Date(s.created_at).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}
                           </p>
+
+                          {/* Ingestion Status Indicator */}
+                          <div className="mt-2 flex flex-wrap items-center gap-2">
+                            {s.status === "completed" ? (
+                              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[0.72rem] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                                Knowledge Ready
+                              </span>
+                            ) : s.status === "failed" ? (
+                              <div className="flex flex-wrap items-center gap-2">
+                                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[0.72rem] font-semibold bg-rose-50 text-rose-700 border border-rose-200" title={s.error_message || undefined}>
+                                  <span className="w-1.5 h-1.5 rounded-full bg-rose-500" />
+                                  {s.processing_stage ? `Failed at ${s.processing_stage}` : "Failed"}
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={() => handleRetrySyllabus(s.id)}
+                                  disabled={retryingId === s.id}
+                                  className="text-[0.75rem] font-semibold text-blue-600 hover:text-blue-800 underline flex items-center gap-1 cursor-pointer bg-transparent border-none p-0"
+                                >
+                                  {retryingId === s.id ? "Retrying..." : "↺ Retry"}
+                                </button>
+                              </div>
+                            ) : (
+                              <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[0.72rem] font-semibold bg-blue-50 text-blue-700 border border-blue-200">
+                                <span className="w-2 h-2 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
+                                {s.processing_stage === "parsing" ? "Parsing Structure" :
+                                 s.processing_stage === "processing_images" ? "Analyzing Visuals" :
+                                 s.processing_stage === "chunking" ? "Semantic Chunking" :
+                                 s.processing_stage === "extracting_knowledge" ? "Extracting Knowledge" :
+                                 s.processing_stage === "embedding" ? "Generating Embeddings" :
+                                 s.processing_stage === "queued" ? "Queued in Pipeline" : "Processing"}
+                              </span>
+                            )}
+                          </div>
+
                           {!isPdf && <p className="text-amber-600 text-[0.75rem] font-semibold mt-1">Unsupported file format</p>}
                         </div>
                       </div>

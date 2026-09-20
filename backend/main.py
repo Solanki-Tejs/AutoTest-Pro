@@ -22,7 +22,6 @@ app.include_router(auth.router, prefix="/api/auth", tags=["Authentication"])
 app.include_router(classes.router, prefix="/api/classes", tags=["Classes"])
 app.include_router(syllabus.router, prefix="/api", tags=["Syllabus"])
 
-
 @app.get("/")
 async def root():
     return {

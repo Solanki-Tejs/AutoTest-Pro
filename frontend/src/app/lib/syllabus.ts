@@ -1,6 +1,10 @@
 import { getStoredToken } from "./auth";
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api";
+const RAW_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+const API_BASE = RAW_BASE.replace(/\/+$/, "").endsWith("/api")
+  ? RAW_BASE.replace(/\/+$/, "")
+  : `${RAW_BASE.replace(/\/+$/, "")}/api`;
+
 
 export interface SyllabusItem {
   id: string;
@@ -8,6 +12,18 @@ export interface SyllabusItem {
   title: string;
   file_ref: string;
   created_at: string;
+  status: string;
+  processing_stage?: string | null;
+  error_message?: string | null;
+}
+
+export interface SyllabusStatus {
+  id: string;
+  status: string;
+  stage?: string | null;
+  progress: number;
+  error_message?: string | null;
+  updated_at?: string | null;
 }
 
 export async function uploadSyllabus(
@@ -55,6 +71,42 @@ export async function fetchSyllabusList(classId: number): Promise<SyllabusItem[]
   return res.json();
 }
 
+export async function fetchSyllabusStatus(syllabusId: string): Promise<SyllabusStatus> {
+  const token = getStoredToken();
+  if (!token) throw new Error("No auth token");
+
+  const res = await fetch(`${API_BASE}/syllabus/${syllabusId}/status`, {
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+  });
+
+  if (!res.ok) {
+    throw new Error("Failed to fetch syllabus status");
+  }
+
+  return res.json();
+}
+
+export async function retrySyllabus(syllabusId: string): Promise<SyllabusItem> {
+  const token = getStoredToken();
+  if (!token) throw new Error("No auth token");
+
+  const res = await fetch(`${API_BASE}/syllabus/${syllabusId}/retry`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+  });
+
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.detail || "Failed to retry syllabus ingestion");
+  }
+
+  return res.json();
+}
+
 export async function deleteSyllabus(syllabusId: string): Promise<void> {
   const token = getStoredToken();
   if (!token) throw new Error("No auth token");
@@ -73,7 +125,6 @@ export async function deleteSyllabus(syllabusId: string): Promise<void> {
 }
 
 export function getDownloadUrl(syllabusId: string, download: boolean = false): string {
-  // Can be used for direct link if we also pass token in query, but fetch is safer for headers
   return `${API_BASE}/syllabus/${syllabusId}/file?download=${download}`;
 }
 
