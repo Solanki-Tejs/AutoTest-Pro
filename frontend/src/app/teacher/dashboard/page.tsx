@@ -16,10 +16,11 @@ import {
   EnrolledStudent,
 } from "@/app/lib/classes";
 import { uploadSyllabus, fetchSyllabusList, deleteSyllabus, getDownloadUrl, downloadSyllabus, viewSyllabus, SyllabusItem } from "@/app/lib/syllabus";
+import { Exam, getTeacherExams } from "@/app/lib/exams";
 import SyllabusUploadModal from "@/app/components/SyllabusUploadModal";
 import { useRouter } from "next/navigation";
 
-type Tab = "classes" | "requests" | "profile";
+type Tab = "classes" | "requests" | "exams" | "profile";
 
 export default function TeacherDashboard() {
   const router = useRouter();
@@ -27,9 +28,10 @@ export default function TeacherDashboard() {
   const [token, setToken] = useState<string | null>(null);
   const [tab, setTab] = useState<Tab>("classes");
 
-  // Classes & requests
+  // Classes, requests & exams
   const [classes, setClasses] = useState<ClassItem[]>([]);
   const [requests, setRequests] = useState<JoinRequest[]>([]);
+  const [exams, setExams] = useState<Exam[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
@@ -65,9 +67,10 @@ export default function TeacherDashboard() {
     setLoading(true);
     setError("");
     try {
-      const [cls, reqs] = await Promise.all([fetchMyClasses(token), fetchAllRequests(token)]);
+      const [cls, reqs, exms] = await Promise.all([fetchMyClasses(token), fetchAllRequests(token), getTeacherExams(token)]);
       setClasses(cls);
       setRequests(reqs);
+      setExams(exms);
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Failed to load");
     } finally {
@@ -196,12 +199,13 @@ export default function TeacherDashboard() {
         </div>
 
         <nav className="flex-1">
-          {(["classes", "requests", "profile"] as Tab[]).map(t => {
+          {(["classes", "requests", "exams", "profile"] as Tab[]).map(t => {
             const active = tab === t;
-            const labels: Record<Tab, string> = { classes: "My Classes", requests: "Join Requests", profile: "Profile" };
+            const labels: Record<Tab, string> = { classes: "My Classes", requests: "Join Requests", exams: "Exams", profile: "Profile" };
             const icons: Record<Tab, React.ReactNode> = {
               classes: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="7" height="7" /><rect x="14" y="3" width="7" height="7" /><rect x="14" y="14" width="7" height="7" /><rect x="3" y="14" width="7" height="7" /></svg>,
               requests: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M23 21v-2a4 4 0 00-3-3.87" /><path d="M16 3.13a4 4 0 010 7.75" /></svg>,
+              exams: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z" /><polyline points="14 2 14 8 20 8" /><line x1="16" y1="13" x2="8" y2="13" /><line x1="16" y1="17" x2="8" y2="17" /><line x1="10" y1="9" x2="8" y2="9" /></svg>,
               profile: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="8" r="4" /><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7" /></svg>,
             };
             return (
@@ -322,6 +326,57 @@ export default function TeacherDashboard() {
                     </div>
                   );
                 })}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ── Exams Tab ── */}
+        {tab === "exams" && (
+          <div className="animate-fade-up">
+            <div className="flex items-center justify-between mb-8">
+              <div>
+                <h1 className="text-[1.8rem] font-bold text-slate-900 tracking-tight mb-1">My Exams</h1>
+                <p className="text-slate-600 text-[0.9rem]">Manage your exam blueprints</p>
+              </div>
+              <button onClick={() => router.push("/teacher/exams/create")}
+                className="flex items-center gap-2 px-5 py-2.5 rounded-md bg-[#2563eb] hover:bg-[#1d4ed8] text-white text-[0.9rem] font-semibold cursor-pointer shadow-sm transition-colors">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
+                Create Exam
+              </button>
+            </div>
+
+            {loading ? (
+              <div className="text-center py-20 text-slate-500 text-[0.9rem]">Loading exams...</div>
+            ) : exams.length === 0 ? (
+              <EmptyState 
+                icon="📝" 
+                title="No exams yet" 
+                desc="Create an exam blueprint and select syllabus documents to start."
+                action="Create Exam"
+                onAction={() => router.push("/teacher/exams/create")}
+              />
+            ) : (
+              <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-5">
+                {exams.map(exam => (
+                  <div key={exam.id} className="bg-white border border-slate-200 rounded-xl p-5 hover:shadow-md transition-all">
+                    <div className="flex justify-between items-start mb-2">
+                      <h3 className="font-bold text-slate-900 line-clamp-1">{exam.title}</h3>
+                      <span className="text-[0.7rem] bg-amber-100 text-amber-700 font-bold px-2 py-0.5 rounded-full uppercase">{exam.status}</span>
+                    </div>
+                    <p className="text-slate-500 text-[0.85rem] mb-4">Class: {exam.class_name}</p>
+                    <div className="flex justify-between text-[0.8rem] text-slate-600 mb-4">
+                      <span>{exam.total_marks} Marks</span>
+                      <span>{exam.duration_minutes} Mins</span>
+                      <span className="capitalize">{exam.difficulty}</span>
+                    </div>
+                    <button 
+                      onClick={() => router.push(`/teacher/exams/${exam.id}/blueprint`)}
+                      className="w-full py-2 bg-slate-50 hover:bg-[#2563eb]/10 border border-slate-200 hover:border-[#2563eb]/30 text-slate-700 hover:text-[#2563eb] rounded-md text-[0.85rem] font-semibold transition-colors cursor-pointer">
+                      Edit Blueprint
+                    </button>
+                  </div>
+                ))}
               </div>
             )}
           </div>
@@ -547,7 +602,6 @@ function ClassDetailView({
             </>
           )}
 
-          {/* Syllabus Section */}
           <div className="flex items-center justify-between mb-4">
             <SectionHeader
               icon={<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>}
@@ -556,12 +610,25 @@ function ClassDetailView({
               badgeColor="text-[#2563eb]"
               badgeBg="bg-[#2563eb]/10 border-[#2563eb]/30"
             />
-            <button
-              onClick={() => setShowSyllabusUpload(true)}
-              className="px-3 py-1.5 rounded-md bg-[#2563eb] text-white text-[0.8rem] font-semibold hover:bg-[#1d4ed8] transition-colors"
-            >
-              + Upload Syllabus
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={loadSyllabus}
+                disabled={syllabusLoading}
+                className={`p-1.5 rounded-md border border-slate-200 text-slate-500 hover:bg-slate-50 hover:text-slate-700 transition-colors ${syllabusLoading ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
+                title="Refresh Syllabus"
+              >
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={syllabusLoading ? 'animate-spin' : ''}>
+                  <path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8" />
+                  <path d="M21 3v5h-5" />
+                </svg>
+              </button>
+              <button
+                onClick={() => setShowSyllabusUpload(true)}
+                className="px-3 py-1.5 rounded-md bg-[#2563eb] text-white text-[0.8rem] font-semibold hover:bg-[#1d4ed8] transition-colors"
+              >
+                + Upload Syllabus
+              </button>
+            </div>
           </div>
           
           <div className="mb-8">
@@ -601,6 +668,14 @@ function ClassDetailView({
                             Uploaded {new Date(s.created_at).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}
                           </p>
                           {!isPdf && <p className="text-amber-600 text-[0.75rem] font-semibold mt-1">Unsupported file format</p>}
+                          {s.status && (
+                            <div className="flex items-center gap-2 mt-1.5">
+                              <span className={`text-[0.7rem] px-2 py-0.5 rounded-full font-semibold ${s.status === 'READY' ? 'bg-green-100 text-green-700' : s.status === 'FAILED' ? 'bg-red-100 text-red-700' : 'bg-blue-100 text-blue-700'}`}>
+                                {s.status === 'READY' ? 'Processed' : s.status === 'FAILED' ? 'Failed' : `Processing: ${s.stage?.replace('_', ' ') || 'Starting'}`}
+                              </span>
+                              {s.error && <span className="text-red-500 text-[0.75rem] max-w-[200px] truncate" title={s.error}>{s.error}</span>}
+                            </div>
+                          )}
                         </div>
                       </div>
                       <div className="flex items-center gap-2 shrink-0 self-end sm:self-auto">

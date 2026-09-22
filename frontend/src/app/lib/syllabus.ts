@@ -8,6 +8,9 @@ export interface SyllabusItem {
   title: string;
   file_ref: string;
   created_at: string;
+  status?: string;
+  stage?: string;
+  error?: string;
 }
 
 export async function uploadSyllabus(

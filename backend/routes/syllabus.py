@@ -70,6 +70,16 @@ async def upload_syllabus(
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to save metadata")
 
 
+@router.get("/syllabus/available-for-exam", response_model=list[dict])
+async def list_available_for_exam(
+    current_user=Depends(require_roles("teacher")),
+    db: Session = Depends(get_db),
+):
+    teacher_id = int(current_user["sub"])
+    
+    from services.syllabus_service import get_available_syllabuses_for_exam
+    return get_available_syllabuses_for_exam(teacher_id, db)
+
 @router.get("/classes/{class_id}/syllabus", response_model=list[SyllabusResponse])
 async def list_syllabus(
     class_id: int,

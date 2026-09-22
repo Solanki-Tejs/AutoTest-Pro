@@ -136,3 +136,37 @@ def delete_syllabus(syllabus_id: UUID, db: Session) -> bool:
     )
     db.commit()
     return result.rowcount > 0
+
+def get_available_syllabuses_for_exam(teacher_id: int, db: Session) -> list[dict]:
+    ensure_tables(db)
+    
+    # Get all READY syllabuses for classes owned by this teacher
+    query = text("""
+        SELECT s.id, s.class_id, s.title, s.file_ref, s.status, s.stage, s.error, s.created_at, c.name as class_name
+        FROM syllabus s
+        JOIN classes c ON s.class_id = c.id
+        WHERE c.teacher_id = :teacher_id AND s.status = 'READY'
+    """)
+    result = db.execute(query, {"teacher_id": teacher_id})
+    syllabuses = [dict(row) for row in result.mappings()]
+    
+    if not syllabuses:
+        return []
+        
+    # Also check if MongoDB mapping exists
+    try:
+        from databases.mongo import get_mongo_db
+        mongo_db = get_mongo_db()
+        syllabus_ids = [str(s["id"]) for s in syllabuses]
+        
+        mappings = mongo_db.syllabus_topic_mapping.find(
+            {"uploaded_syllabus_id": {"$in": syllabus_ids}},
+            {"uploaded_syllabus_id": 1}
+        )
+        mapped_ids = {m["uploaded_syllabus_id"] for m in mappings}
+        
+        return [s for s in syllabuses if str(s["id"]) in mapped_ids]
+    except Exception as e:
+        print(f"Error checking MongoDB for syllabus mapping: {e}")
+        # If MongoDB check fails, maybe return empty or the full list? Let's be strict.
+        return []

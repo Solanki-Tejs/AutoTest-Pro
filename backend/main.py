@@ -28,6 +28,9 @@ app.include_router(classes.router, prefix="/api/classes", tags=["Classes"])
 app.include_router(syllabus.router, prefix="/api", tags=["Syllabus"])
 app.include_router(topics.router, prefix="/api", tags=["Topics"])
 
+from routes import exams
+app.include_router(exams.router, prefix="/api/exams", tags=["Exams"])
+
 
 @app.get("/")
 async def root():

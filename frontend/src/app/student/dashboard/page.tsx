@@ -422,12 +422,17 @@ function StudentClassDetailView({ m, onBack }: { m: Membership; onBack: () => vo
   const [syllabusList, setSyllabusList] = useState<SyllabusItem[]>([]);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
+  const loadSyllabus = useCallback(() => {
+    setLoading(true);
     fetchSyllabusList(m.class_id)
       .then(setSyllabusList)
       .catch(() => {})
       .finally(() => setLoading(false));
   }, [m.class_id]);
+
+  useEffect(() => {
+    loadSyllabus();
+  }, [loadSyllabus]);
 
   return (
     <div className="animate-fade-in">
@@ -449,10 +454,21 @@ function StudentClassDetailView({ m, onBack }: { m: Membership; onBack: () => vo
       </div>
 
       <div className="mb-8">
-        <div className="flex items-center gap-3 mb-6 border-b border-slate-200">
+        <div className="flex items-center justify-between mb-6 border-b border-slate-200">
           <div className="px-4 py-3 border-b-2 border-green-500 text-green-700 font-bold text-[0.95rem]">
             Syllabus
           </div>
+          <button
+            onClick={loadSyllabus}
+            disabled={loading}
+            className={`p-1.5 rounded-md border border-slate-200 text-slate-500 hover:bg-slate-50 hover:text-slate-700 transition-colors mr-2 mb-2 ${loading ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
+            title="Refresh Syllabus"
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={loading ? 'animate-spin' : ''}>
+              <path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8" />
+              <path d="M21 3v5h-5" />
+            </svg>
+          </button>
         </div>
 
         {loading ? (
@@ -485,6 +501,14 @@ function StudentClassDetailView({ m, onBack }: { m: Membership; onBack: () => vo
                         Uploaded {new Date(s.created_at).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}
                       </p>
                       {!isPdf && <p className="text-amber-600 text-[0.75rem] font-semibold mt-1">Unsupported file format</p>}
+                      {s.status && (
+                        <div className="flex items-center gap-2 mt-1.5">
+                          <span className={`text-[0.7rem] px-2 py-0.5 rounded-full font-semibold ${s.status === 'READY' ? 'bg-green-100 text-green-700' : s.status === 'FAILED' ? 'bg-red-100 text-red-700' : 'bg-blue-100 text-blue-700'}`}>
+                            {s.status === 'READY' ? 'Processed' : s.status === 'FAILED' ? 'Failed' : `Processing: ${s.stage?.replace('_', ' ') || 'Starting'}`}
+                          </span>
+                          {s.error && <span className="text-red-500 text-[0.75rem] max-w-[200px] truncate" title={s.error}>{s.error}</span>}
+                        </div>
+                      )}
                     </div>
                   </div>
                   <div className="flex items-center gap-2 shrink-0 self-end sm:self-auto">
