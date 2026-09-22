@@ -18,6 +18,14 @@ def init_mongo():
         # Create unique index on uploaded_syllabus_id
         index = IndexModel([("uploaded_syllabus_id", ASCENDING)], unique=True)
         syllabus_topic_mapping_collection.create_indexes([index])
+
+        # Indexes for exam blueprints
+        db.exam_question_blueprint.create_index([("exam_id", ASCENDING)], unique=True)
+
+        # Indexes for question bank
+        db.question_bank.create_index([("exam_id", ASCENDING)])
+        db.question_bank.create_index([("exam_id", ASCENDING), ("is_active", ASCENDING)])
+
         print("MongoDB indexes created successfully.")
     except ConnectionFailure:
         print("Failed to connect to MongoDB.")

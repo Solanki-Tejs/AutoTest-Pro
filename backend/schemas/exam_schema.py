@@ -9,7 +9,7 @@ class ExamCreate(BaseModel):
     total_marks: int = Field(..., gt=0)
     duration_minutes: int = Field(..., gt=0)
     difficulty: str
-    selected_pdf_ids: List[UUID] = Field(..., min_items=1)
+    selected_pdf_ids: List[UUID] = []
     start_time: Optional[datetime] = None
     end_time: Optional[datetime] = None
 
@@ -19,7 +19,7 @@ class ExamUpdate(BaseModel):
     total_marks: Optional[int] = Field(None, gt=0)
     duration_minutes: Optional[int] = Field(None, gt=0)
     difficulty: Optional[str] = None
-    selected_pdf_ids: Optional[List[UUID]] = Field(None, min_items=1)
+    selected_pdf_ids: Optional[List[UUID]] = None
     start_time: Optional[datetime] = None
     end_time: Optional[datetime] = None
     status: Optional[str] = None

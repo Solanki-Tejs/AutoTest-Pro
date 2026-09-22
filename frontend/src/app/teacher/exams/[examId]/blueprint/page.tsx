@@ -1,10 +1,11 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { useRouter, useParams } from "next/navigation";
 import { getStoredToken, getStoredUser } from "@/app/lib/auth";
-import { getExam, getExamBlueprint, saveExamBlueprint, Exam, Section, Blueprint } from "@/app/lib/exams";
-import { getAvailableSyllabuses, SyllabusAvailable } from "@/app/lib/exams";
+import { getExam, getExamBlueprint, saveExamBlueprint, Exam, Section } from "@/app/lib/exams";
+import { SyllabusAvailable } from "@/app/lib/exams";
+import debounce from "lodash/debounce";
 
 export default function ExamBlueprintPage() {
   const router = useRouter();
@@ -16,9 +17,8 @@ export default function ExamBlueprintPage() {
   const [syllabuses, setSyllabuses] = useState<SyllabusAvailable[]>([]);
   const [sections, setSections] = useState<Section[]>([]);
   const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
+  const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [error, setError] = useState("");
-  const [success, setSuccess] = useState("");
 
   useEffect(() => {
     const u = getStoredUser();
@@ -37,7 +37,7 @@ export default function ExamBlueprintPage() {
         const [exm, blp, sylls] = await Promise.all([
           getExam(token!, examId),
           getExamBlueprint(token!, examId),
-          getAvailableSyllabuses(token!)
+          import("@/app/lib/exams").then(m => m.getAvailableSyllabuses(token!))
         ]);
         setExam(exm);
         setSections(blp.sections || []);
@@ -55,45 +55,68 @@ export default function ExamBlueprintPage() {
   const examTotal = exam?.total_marks || 0;
   const remainingMarks = examTotal - configuredMarks;
 
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const debouncedSave = useCallback(
+    debounce(async (secs: Section[], currentMarks: number, t: string) => {
+      if (currentMarks !== examTotal) {
+        setSaveStatus("idle");
+        return; // don't auto-save invalid blueprint
+      }
+      setSaveStatus("saving");
+      try {
+        await saveExamBlueprint(t, examId, secs);
+        setSaveStatus("saved");
+        setTimeout(() => setSaveStatus("idle"), 2000);
+      } catch (err: any) {
+        console.error(err);
+        setSaveStatus("error");
+      }
+    }, 1000),
+    [examId, examTotal]
+  );
+
+  const triggerUpdate = (newSections: Section[]) => {
+    setSections(newSections);
+    const newMarks = newSections.reduce((acc, sec) => acc + (sec.count * sec.marks_each), 0);
+    if (token) {
+      debouncedSave(newSections, newMarks, token);
+    }
+  };
+
   const addSection = () => {
-    setSections(prev => [
-      ...prev,
-      { section: `Section ${String.fromCharCode(65 + prev.length)}`, type: "mcq", count: 1, marks_each: 1, order: prev.length }
+    triggerUpdate([
+      ...sections,
+      { section: `Section ${String.fromCharCode(65 + sections.length)}`, type: "mcq", count: 1, marks_each: 1, order: sections.length }
     ]);
   };
 
   const updateSection = (index: number, field: keyof Section, value: any) => {
-    setSections(prev => {
-      const next = [...prev];
-      next[index] = { ...next[index], [field]: value };
-      return next;
-    });
+    const next = [...sections];
+    next[index] = { ...next[index], [field]: value };
+    triggerUpdate(next);
   };
 
   const removeSection = (index: number) => {
-    setSections(prev => prev.filter((_, i) => i !== index));
+    triggerUpdate(sections.filter((_, i) => i !== index));
   };
 
-  const handleSave = async () => {
+  const handleGenerate = async () => {
     if (!token) return;
     setError("");
-    setSuccess("");
-    
     if (configuredMarks !== examTotal) {
       setError(`Configured marks (${configuredMarks}) must match exam total marks (${examTotal}).`);
       return;
     }
     
-    setSaving(true);
+    setSaveStatus("saving");
     try {
-      const blueprint = await saveExamBlueprint(token, examId, sections);
-      setSections(blueprint.sections);
-      setSuccess("Blueprint saved successfully!");
-      setTimeout(() => setSuccess(""), 3000);
+      await saveExamBlueprint(token, examId, sections);
+      const { generatePaper } = await import("@/app/lib/exams");
+      await generatePaper(token, examId);
+      router.push(`/teacher/exams/${examId}/paper`);
     } catch (err: any) {
-      setError(err.message || "Failed to save blueprint");
-    } finally {
-      setSaving(false);
+      setError(err.message || "Failed to generate paper. Make sure Ollama is running.");
+      setSaveStatus("error");
     }
   };
 
@@ -104,35 +127,30 @@ export default function ExamBlueprintPage() {
   if (!exam) return <div className="p-8 text-red-600">Exam not found.</div>;
 
   return (
-    <main className="min-h-screen bg-slate-50 pb-20">
-      {/* ── Top Bar ── */}
-      <div className="bg-white border-b border-slate-200 sticky top-0 z-10 shadow-sm">
-        <div className="max-w-5xl mx-auto px-6 py-4 flex items-center justify-between">
-          <div>
-            <button onClick={() => router.push("/teacher/dashboard")} className="text-slate-500 text-[0.85rem] mb-1 flex items-center gap-1 hover:text-[#2563eb] transition-colors">
-              &larr; Dashboard
-            </button>
-            <h1 className="text-[1.4rem] font-bold text-slate-900 leading-tight">{exam.title}</h1>
-          </div>
-          <div className="flex items-center gap-6">
-            <div className="text-right">
-              <div className="text-[0.75rem] font-bold text-slate-500 uppercase tracking-widest mb-1">Marks</div>
-              <div className={`text-[1.5rem] font-bold leading-none ${remainingMarks === 0 ? "text-green-600" : remainingMarks < 0 ? "text-red-600" : "text-[#2563eb]"}`}>
-                {configuredMarks} <span className="text-slate-300 text-[1.1rem]">/ {examTotal}</span>
-              </div>
+    <div className="animate-fade-in">
+      <div className="flex items-center justify-between mb-6">
+        <div>
+          <h2 className="text-2xl font-bold text-slate-900 tracking-tight">Blueprint Config</h2>
+          <p className="text-slate-600 text-[0.9rem]">Define the structure and sections</p>
+        </div>
+        
+        <div className="flex items-center gap-6">
+          <div className="text-right">
+            <div className="text-[0.75rem] font-bold text-slate-500 uppercase tracking-widest mb-1">Marks</div>
+            <div className={`text-[1.5rem] font-bold leading-none ${remainingMarks === 0 ? "text-green-600" : remainingMarks < 0 ? "text-red-600" : "text-[#2563eb]"}`}>
+              {configuredMarks} <span className="text-slate-300 text-[1.1rem]">/ {examTotal}</span>
             </div>
-            <button 
-              onClick={handleSave} 
-              disabled={saving}
-              className="px-6 py-2.5 bg-[#2563eb] hover:bg-[#1d4ed8] text-white text-[0.95rem] font-bold rounded-md shadow-sm transition-colors disabled:opacity-50"
-            >
-              {saving ? "Saving..." : "Save Draft"}
-            </button>
+          </div>
+          <div className="w-px h-8 bg-slate-200"></div>
+          <div className="text-sm font-medium min-w-[80px]">
+            {saveStatus === "saving" && <span className="text-slate-500 flex items-center gap-2"><div className="w-3 h-3 rounded-full border-2 border-slate-300 border-t-[#2563eb] animate-spin"></div> Saving...</span>}
+            {saveStatus === "saved" && <span className="text-green-600">✓ Saved</span>}
+            {saveStatus === "error" && <span className="text-red-500">⚠ Failed to save</span>}
           </div>
         </div>
       </div>
 
-      <div className="max-w-5xl mx-auto px-6 mt-8 flex items-start gap-8">
+      <div className="flex items-start gap-8">
         
         {/* ── Main Content ── */}
         <div className="flex-1">
@@ -148,7 +166,6 @@ export default function ExamBlueprintPage() {
           </div>
           
           {error && <div className="mb-6 p-4 bg-red-50 text-red-600 border border-red-200 rounded-md font-semibold text-[0.9rem]">{error}</div>}
-          {success && <div className="mb-6 p-4 bg-green-50 text-green-700 border border-green-200 rounded-md font-semibold text-[0.9rem]">{success}</div>}
 
           {sections.length === 0 ? (
             <div className="text-center py-16 px-8 bg-white border border-dashed border-slate-300 rounded-xl">
@@ -220,6 +237,22 @@ export default function ExamBlueprintPage() {
               ))}
             </div>
           )}
+
+          <div className="flex justify-between items-center pt-8 border-t border-slate-200 mt-8">
+            <button 
+              onClick={() => router.push(`/teacher/exams/${examId}/syllabus`)}
+              className="px-6 py-2.5 text-slate-600 font-semibold text-[0.95rem] hover:text-slate-900 transition-colors"
+            >
+              &larr; Back to Syllabus
+            </button>
+            <button 
+              onClick={handleGenerate} 
+              disabled={saveStatus === "saving" || remainingMarks !== 0}
+              className="px-6 py-2.5 bg-[#2563eb] hover:bg-[#1d4ed8] text-white text-[0.95rem] font-bold rounded-md shadow-sm transition-colors disabled:opacity-50"
+            >
+              Generate Paper &rarr;
+            </button>
+          </div>
         </div>
 
         {/* ── Sidebar Info ── */}
@@ -267,6 +300,6 @@ export default function ExamBlueprintPage() {
         </div>
         
       </div>
-    </main>
+    </div>
   );
 }

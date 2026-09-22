@@ -16,7 +16,7 @@ import {
   EnrolledStudent,
 } from "@/app/lib/classes";
 import { uploadSyllabus, fetchSyllabusList, deleteSyllabus, getDownloadUrl, downloadSyllabus, viewSyllabus, SyllabusItem } from "@/app/lib/syllabus";
-import { Exam, getTeacherExams } from "@/app/lib/exams";
+import { Exam, getTeacherExams, createExam, deleteExam } from "@/app/lib/exams";
 import SyllabusUploadModal from "@/app/components/SyllabusUploadModal";
 import { useRouter } from "next/navigation";
 
@@ -100,6 +100,41 @@ export default function TeacherDashboard() {
     setSelectedClass(null);
     setStudents([]);
   }
+
+  const handleCreateExam = async () => {
+    if (!token) return;
+    if (classes.length === 0) {
+      alert("Please create a class first before creating an exam.");
+      setTab("classes");
+      return;
+    }
+    
+    setLoading(true);
+    try {
+      const draftExam = await createExam(token, {
+        title: "Untitled Exam",
+        class_id: classes[0].id,
+        total_marks: 50,
+        duration_minutes: 60,
+        difficulty: "medium",
+        selected_pdf_ids: []
+      });
+      router.push(`/teacher/exams/${draftExam.id}/general`);
+    } catch (e: any) {
+      alert("Failed to create exam draft: " + e.message);
+      setLoading(false);
+    }
+  };
+
+  const handleDeleteExam = async (examId: string) => {
+    if (!token || !confirm("Are you sure you want to delete this exam?")) return;
+    try {
+      await deleteExam(token, examId);
+      setExams(prev => prev.filter(e => e.id !== examId));
+    } catch (e: any) {
+      alert("Failed to delete exam: " + e.message);
+    }
+  };
 
   async function handleRemoveStudent(studentId: number) {
     if (!token || !selectedClass) return;
@@ -339,7 +374,7 @@ export default function TeacherDashboard() {
                 <h1 className="text-[1.8rem] font-bold text-slate-900 tracking-tight mb-1">My Exams</h1>
                 <p className="text-slate-600 text-[0.9rem]">Manage your exam blueprints</p>
               </div>
-              <button onClick={() => router.push("/teacher/exams/create")}
+              <button onClick={handleCreateExam}
                 className="flex items-center gap-2 px-5 py-2.5 rounded-md bg-[#2563eb] hover:bg-[#1d4ed8] text-white text-[0.9rem] font-semibold cursor-pointer shadow-sm transition-colors">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
                 Create Exam
@@ -354,15 +389,20 @@ export default function TeacherDashboard() {
                 title="No exams yet" 
                 desc="Create an exam blueprint and select syllabus documents to start."
                 action="Create Exam"
-                onAction={() => router.push("/teacher/exams/create")}
+                onAction={handleCreateExam}
               />
             ) : (
               <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-5">
                 {exams.map(exam => (
                   <div key={exam.id} className="bg-white border border-slate-200 rounded-xl p-5 hover:shadow-md transition-all">
                     <div className="flex justify-between items-start mb-2">
-                      <h3 className="font-bold text-slate-900 line-clamp-1">{exam.title}</h3>
-                      <span className="text-[0.7rem] bg-amber-100 text-amber-700 font-bold px-2 py-0.5 rounded-full uppercase">{exam.status}</span>
+                      <h3 className="font-bold text-slate-900 line-clamp-1 pr-2">{exam.title}</h3>
+                      <div className="flex items-center gap-2 shrink-0">
+                        <span className="text-[0.7rem] bg-amber-100 text-amber-700 font-bold px-2 py-0.5 rounded-full uppercase">{exam.status}</span>
+                        <button onClick={() => handleDeleteExam(exam.id)} className="text-slate-400 hover:text-red-500 transition-colors" title="Delete Exam">
+                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /></svg>
+                        </button>
+                      </div>
                     </div>
                     <p className="text-slate-500 text-[0.85rem] mb-4">Class: {exam.class_name}</p>
                     <div className="flex justify-between text-[0.8rem] text-slate-600 mb-4">
@@ -371,9 +411,9 @@ export default function TeacherDashboard() {
                       <span className="capitalize">{exam.difficulty}</span>
                     </div>
                     <button 
-                      onClick={() => router.push(`/teacher/exams/${exam.id}/blueprint`)}
-                      className="w-full py-2 bg-slate-50 hover:bg-[#2563eb]/10 border border-slate-200 hover:border-[#2563eb]/30 text-slate-700 hover:text-[#2563eb] rounded-md text-[0.85rem] font-semibold transition-colors cursor-pointer">
-                      Edit Blueprint
+                      onClick={() => router.push(exam.status === 'ready' ? `/teacher/exams/${exam.id}/paper` : `/teacher/exams/${exam.id}/blueprint`)}
+                      className="w-full py-2 bg-slate-50 hover:bg-[#2563eb]/10 border border-slate-200 hover:border-[#2563eb]/30 text-slate-700 hover:text-[#2563eb] rounded-md text-[0.85rem] font-semibold transition-colors cursor-pointer mt-2">
+                      {exam.status === 'ready' ? 'View Approved Paper' : 'Edit Blueprint & Generate'}
                     </button>
                   </div>
                 ))}

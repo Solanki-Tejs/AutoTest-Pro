@@ -85,7 +85,7 @@ def update_exam(exam_id: str, exam_data: ExamUpdate, db: Session) -> dict | None
     updates = []
     params = {"exam_id": exam_id}
     
-    update_fields = exam_data.model_dump(exclude_unset=True)
+    update_fields = exam_data if isinstance(exam_data, dict) else exam_data.model_dump(exclude_unset=True)
     if not update_fields:
         return get_exam_by_id(exam_id, db)
         

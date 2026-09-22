@@ -19,4 +19,5 @@ class BlueprintCreate(BaseModel):
 class BlueprintResponse(BaseModel):
     exam_id: str
     total_marks: int
+    version: int = 1
     sections: List[SectionResponse]

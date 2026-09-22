@@ -1,6 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from routes import question_bank
 from routes import auth, health, classes, syllabus, topics
 from databases.mongo import init_mongo
 
@@ -27,6 +28,7 @@ app.include_router(auth.router, prefix="/api/auth", tags=["Authentication"])
 app.include_router(classes.router, prefix="/api/classes", tags=["Classes"])
 app.include_router(syllabus.router, prefix="/api", tags=["Syllabus"])
 app.include_router(topics.router, prefix="/api", tags=["Topics"])
+app.include_router(question_bank.router, prefix="/api/exams", tags=["Question Bank"])
 
 from routes import exams
 app.include_router(exams.router, prefix="/api/exams", tags=["Exams"])

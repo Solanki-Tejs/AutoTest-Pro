@@ -27,6 +27,7 @@ def get_blueprint(exam_id: str) -> BlueprintResponse | None:
     return BlueprintResponse(
         exam_id=exam_id,
         total_marks=total_marks,
+        version=blueprint.get("version", 1),
         sections=sections
     )
 
@@ -51,10 +52,13 @@ def create_or_update_blueprint(exam_id: str, blueprint_data: BlueprintCreate) ->
         })
         total_marks += sec.count * sec.marks_each
         
+    new_version = existing.get("version", 0) + 1 if existing else 1
+    
     doc = {
         "exam_id": exam_id,
         "total_marks": total_marks,
         "sections": sections_doc,
+        "version": new_version,
         "updated_at": datetime.utcnow()
     }
     
