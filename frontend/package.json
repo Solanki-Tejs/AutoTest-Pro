@@ -9,6 +9,9 @@
     "lint": "eslint"
   },
   "dependencies": {
+    "dom-to-image-more": "^3.10.2",
+    "html2pdf.js": "^0.14.0",
+    "jspdf": "^4.2.1",
     "lodash": "^4.18.1",
     "next": "16.3.0",
     "react": "19.2.8",

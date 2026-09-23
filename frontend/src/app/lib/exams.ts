@@ -76,6 +76,7 @@ export async function createExam(
 export async function getTeacherExams(token: string): Promise<Exam[]> {
   const res = await fetch(`${BASE_URL}/exams`, {
     headers: authHeaders(token),
+    cache: "no-store",
   });
   if (!res.ok) throw new Error("Failed to load exams");
   return res.json();
@@ -108,6 +109,7 @@ export async function updateExam(
 export async function getExam(token: string, examId: string): Promise<Exam> {
   const res = await fetch(`${BASE_URL}/exams/${examId}`, {
     headers: authHeaders(token),
+    cache: "no-store",
   });
   if (!res.ok) {
     throw new Error("Failed to fetch exam");
@@ -130,6 +132,7 @@ export async function deleteExam(token: string, examId: string): Promise<void> {
 export async function getAvailableSyllabuses(token: string): Promise<SyllabusAvailable[]> {
   const res = await fetch(`${BASE_URL}/syllabus/available-for-exam`, {
     headers: authHeaders(token),
+    cache: "no-store",
   });
   if (!res.ok) {
     throw new Error("Failed to fetch available syllabuses");
@@ -140,6 +143,7 @@ export async function getAvailableSyllabuses(token: string): Promise<SyllabusAva
 export async function getExamBlueprint(token: string, examId: string): Promise<Blueprint> {
   const res = await fetch(`${BASE_URL}/exams/${examId}/blueprint`, {
     headers: authHeaders(token),
+    cache: "no-store",
   });
   if (!res.ok) {
     if (res.status === 404) return { exam_id: examId, total_marks: 0, sections: [] };
@@ -231,7 +235,8 @@ export async function generatePaper(token: string, examId: string): Promise<Gene
 
 export async function getGenerationStatus(token: string, examId: string): Promise<GenerationStatus> {
   const res = await fetch(`${BASE_URL}/exams/${examId}/generation-status`, {
-    headers: authHeaders(token)
+    headers: authHeaders(token),
+    cache: "no-store"
   });
   if (!res.ok) {
     const errorData = await res.json().catch(() => ({}));
@@ -242,7 +247,8 @@ export async function getGenerationStatus(token: string, examId: string): Promis
 
 export async function getQuestionBank(token: string, examId: string): Promise<QuestionBank> {
   const res = await fetch(`${BASE_URL}/exams/${examId}/question-bank`, {
-    headers: authHeaders(token)
+    headers: authHeaders(token),
+    cache: "no-store"
   });
   if (!res.ok) {
     const errorData = await res.json().catch(() => ({}));
