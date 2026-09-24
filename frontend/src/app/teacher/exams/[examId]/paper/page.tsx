@@ -144,7 +144,7 @@ export default function PaperEditorPage() {
     try {
       await approveQuestionBank(token, examId);
       alert("Paper approved successfully!");
-      router.push("/teacher/dashboard");
+      router.push(`/teacher/exams/${examId}/answers`);
     } catch (e: any) {
       alert(e.message || "Failed to approve paper");
     }

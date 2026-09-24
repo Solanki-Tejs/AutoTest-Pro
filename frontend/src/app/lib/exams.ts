@@ -302,3 +302,97 @@ export async function deleteQuestion(token: string, examId: string, questionId: 
     throw new Error(errorData.detail || "Failed to delete question");
   }
 }
+
+// ── Answers ─────────────────────────────────────────────────────────
+
+export interface Answer {
+  answer_id: string;
+  question_id: string;
+  answer_key?: string;
+  answer_text: string;
+  answer_type: string;
+  is_edited: boolean;
+  is_approved: boolean;
+  is_stale?: boolean;
+}
+
+export interface AnswerBank {
+  _id: string;
+  exam_id: string;
+  question_bank_id: string;
+  question_bank_version: number;
+  answer_body: Answer[];
+  status: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AnswerGenerationStatus {
+  exam_id: string;
+  status: string;
+  total_questions: number;
+  generated_questions: number;
+  failed_questions: number;
+  progress: number;
+}
+
+export async function generateAnswers(token: string, examId: string): Promise<void> {
+  const res = await fetch(`${BASE_URL}/exams/${examId}/answers/generate`, {
+    method: "POST",
+    headers: authHeaders(token)
+  });
+  if (!res.ok) throw new Error("Failed to start answer generation");
+}
+
+export async function getAnswerGenerationStatus(token: string, examId: string): Promise<AnswerGenerationStatus> {
+  const res = await fetch(`${BASE_URL}/exams/${examId}/answers/status`, {
+    headers: authHeaders(token),
+    cache: "no-store"
+  });
+  if (!res.ok) throw new Error("Failed to fetch answer generation status");
+  return res.json();
+}
+
+export async function getAnswerBank(token: string, examId: string): Promise<AnswerBank> {
+  const res = await fetch(`${BASE_URL}/exams/${examId}/answers`, {
+    headers: authHeaders(token),
+    cache: "no-store"
+  });
+  if (!res.ok) throw new Error("Answer bank not found");
+  return res.json();
+}
+
+export async function editAnswer(token: string, examId: string, answerId: string, updates: Partial<Answer>): Promise<void> {
+  const res = await fetch(`${BASE_URL}/exams/${examId}/answers/${answerId}`, {
+    method: "PATCH",
+    headers: { ...authHeaders(token) },
+    body: JSON.stringify(updates)
+  });
+  if (!res.ok) throw new Error("Failed to edit answer");
+}
+
+export async function regenerateAnswer(token: string, examId: string, answerId: string): Promise<Answer> {
+  const res = await fetch(`${BASE_URL}/exams/${examId}/answers/${answerId}/regenerate`, {
+    method: "POST",
+    headers: authHeaders(token)
+  });
+  if (!res.ok) throw new Error("Failed to regenerate answer");
+  return res.json();
+}
+
+export async function regenerateAllAnswers(token: string, examId: string, mode: "all" | "unedited" = "unedited"): Promise<void> {
+  const res = await fetch(`${BASE_URL}/exams/${examId}/answers/regenerate`, {
+    method: "POST",
+    headers: authHeaders(token),
+    body: JSON.stringify({ mode })
+  });
+  if (!res.ok) throw new Error("Failed to regenerate answers");
+}
+
+export async function approveAnswerBank(token: string, examId: string): Promise<void> {
+  const res = await fetch(`${BASE_URL}/exams/${examId}/answers/approve`, {
+    method: "POST",
+    headers: authHeaders(token)
+  });
+  if (!res.ok) throw new Error("Failed to approve answer bank");
+}

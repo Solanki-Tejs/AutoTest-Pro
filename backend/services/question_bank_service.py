@@ -2,6 +2,7 @@ from databases.mongo import get_mongo_db
 from schemas.question_bank_schema import QuestionBankResponse, QuestionUpdateSchema
 from datetime import datetime, timezone
 from bson.objectid import ObjectId
+from services.answer_bank_service import mark_answer_stale
 
 def get_active_question_bank(exam_id: str) -> dict | None:
     db = get_mongo_db()
@@ -69,6 +70,10 @@ def edit_question(exam_id: str, question_id: str, updates: QuestionUpdateSchema,
             {"_id": ObjectId(qb["_id"])},
             {"$set": {"question_body": qb["question_body"], "updated_at": datetime.now(timezone.utc)}}
         )
+        try:
+            mark_answer_stale(exam_id, question_id)
+        except Exception as e:
+            print(f"Error marking answer stale: {e}")
         return True
     return False
 

@@ -11,6 +11,7 @@ from databases.mongo import get_mongo_db
 from services.exam_service import get_exam_by_id
 from services.exam_blueprint_service import get_blueprint
 from services.question_bank_service import save_question_bank, get_active_question_bank, set_generation_status, update_question_bank
+from services.answer_bank_service import mark_answer_stale
 from services.question_validation_service import validate_generated_questions
 
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://127.0.0.1:11434").rstrip("/")
@@ -295,4 +296,10 @@ def regenerate_single_question(exam_id: str, question_id: str, db: Session) -> d
                 break
                 
     update_question_bank(exam_id, paper["version"], {"question_body": paper["question_body"]})
+    
+    try:
+        mark_answer_stale(exam_id, question_id)
+    except Exception as e:
+        print(f"Error marking answer stale: {e}")
+        
     return valid_q
