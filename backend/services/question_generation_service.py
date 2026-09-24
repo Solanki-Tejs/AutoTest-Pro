@@ -84,8 +84,7 @@ def generate_section_questions(section: dict, context: str, existing_questions: 
                                     "text": {"type": "string"}
                                 }
                             }
-                        },
-                        "correct_answer": {"type": "string"}
+                        }
                     },
                     "required": ["question_text", "type", "bloom_level", "mark"]
                 }
@@ -96,7 +95,7 @@ def generate_section_questions(section: dict, context: str, existing_questions: 
 
     type_instructions = ""
     if q_type == "mcq":
-        type_instructions = f"Generate {count} Multiple Choice Questions (MCQ). Each must have exactly 4 options and a correct_answer."
+        type_instructions = f"Generate {count} Multiple Choice Questions (MCQ). Each must have exactly 4 options."
     elif q_type == "short":
         type_instructions = f"Generate {count} Short Answer questions."
     elif q_type == "long":

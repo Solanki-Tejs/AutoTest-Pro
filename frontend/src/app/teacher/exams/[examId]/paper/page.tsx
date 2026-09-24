@@ -208,48 +208,64 @@ export default function PaperEditorPage() {
   async function handleDownloadPDF() {
     const element = document.getElementById('paper-container');
     if (!element) return;
+    
+    const oldCursor = document.body.style.cursor;
+    document.body.style.cursor = 'wait';
 
     try {
       // @ts-ignore
       const domtoimage = (await import('dom-to-image-more')).default;
       const { jsPDF } = await import('jspdf');
 
-      const scale = 2;
-      const dataUrl = await domtoimage.toPng(element, {
-        quality: 1,
-        bgcolor: '#ffffff',
-        width: element.clientWidth * scale,
-        height: element.clientHeight * scale,
-        style: {
-          transform: `scale(${scale})`,
-          transformOrigin: 'top left',
-          width: `${element.clientWidth}px`,
-          height: `${element.clientHeight}px`
-        }
-      });
-
+      const blocks = element.querySelectorAll('.pdf-block');
       const pdf = new jsPDF('p', 'mm', 'a4');
-      const pdfWidth = pdf.internal.pageSize.getWidth();
-      const pdfHeight = (element.clientHeight * pdfWidth) / element.clientWidth;
-
-      let heightLeft = pdfHeight;
-      let position = 0;
+      const pageWidth = pdf.internal.pageSize.getWidth();
       const pageHeight = pdf.internal.pageSize.getHeight();
+      const margin = 15;
+      const usableWidth = pageWidth - 2 * margin;
+      
+      let currentY = margin;
+      const scale = 2; // For higher resolution text
 
-      pdf.addImage(dataUrl, 'PNG', 0, position, pdfWidth, pdfHeight);
-      heightLeft -= pageHeight;
+      for (let i = 0; i < blocks.length; i++) {
+        const block = blocks[i] as HTMLElement;
+        
+        // Skip empty blocks
+        if (block.clientHeight === 0) continue;
 
-      while (heightLeft >= 0) {
-        position = heightLeft - pdfHeight;
-        pdf.addPage();
-        pdf.addImage(dataUrl, 'PNG', 0, position, pdfWidth, pdfHeight);
-        heightLeft -= pageHeight;
+        const dataUrl = await domtoimage.toPng(block, {
+          quality: 1,
+          bgcolor: '#ffffff',
+          width: block.clientWidth * scale,
+          height: block.clientHeight * scale,
+          style: {
+            transform: `scale(${scale})`,
+            transformOrigin: 'top left',
+            width: `${block.clientWidth}px`,
+            height: `${block.clientHeight}px`,
+            margin: '0' // Remove external margins for cleaner snapshots
+          }
+        });
+
+        // Calculate height proportionally for the PDF page width
+        const imgHeight = (block.clientHeight * usableWidth) / block.clientWidth;
+        
+        // Page break if it exceeds page height (unless it's the very top of a new page anyway)
+        if (currentY + imgHeight > pageHeight - margin && currentY > margin) {
+          pdf.addPage();
+          currentY = margin;
+        }
+        
+        pdf.addImage(dataUrl, 'PNG', margin, currentY, usableWidth, imgHeight);
+        currentY += imgHeight + 6; // 6mm gap between blocks
       }
 
       pdf.save(`${exam?.title || 'Exam'}_Paper.pdf`);
     } catch (e) {
       console.error("PDF generation failed", e);
       alert("Failed to generate PDF automatically.");
+    } finally {
+      document.body.style.cursor = oldCursor;
     }
   }
 
@@ -373,7 +389,7 @@ export default function PaperEditorPage() {
           )
         ) : (
           <div id="paper-container" className="bg-white shadow-xl mx-auto border border-slate-200 max-w-[850px] min-h-[1100px] p-12 sm:p-16 font-serif text-black print:shadow-none print:border-none print:p-0 print:max-w-none print:w-full">
-            <div className="text-center mb-10">
+            <div className="text-center mb-10 pdf-block">
               <h1 className="text-xl sm:text-2xl font-bold uppercase mb-2">QUESTION PAPER</h1>
               <div className="text-lg mb-1">{exam.class_name}</div>
               <div className="text-md uppercase underline mb-6">{exam.title}</div>
@@ -382,16 +398,13 @@ export default function PaperEditorPage() {
                 <div>Time : {exam.duration_minutes} MIN</div>
                 <div>Total Marks. : {exam.total_marks}</div>
               </div>
-              {/* <div className="text-left text-sm sm:text-base italic">
-                Note: Answer all questions. All questions carry equal marks.
-              </div> */}
             </div>
 
             <div className="flex flex-col gap-8 mt-8">
               {paper.question_body.sections.map((section, secIdx) => (
-                <div key={section.sectionNo} className="animate-fade-up">
+                <div key={section.sectionNo} className="animate-fade-up break-inside-avoid">
                   {paper.question_body.sections.length > 1 && (
-                    <div className="text-center font-bold text-lg mb-6 underline">
+                    <div className="text-center font-bold text-lg mb-6 underline pdf-block py-2">
                       Section {section.sectionNo}
                     </div>
                   )}
@@ -401,14 +414,15 @@ export default function PaperEditorPage() {
                   ) : (
                     <div className="flex flex-col gap-6">
                       {section.questions.map((q) => (
-                        <EditableQuestionCard
-                          key={q.question_id}
-                          question={q}
-                          isRegenerating={regeneratingIds.has(q.question_id)}
-                          onSave={(updates) => handleEditSave(q.question_id, updates)}
-                          onRegenerate={() => handleRegenerateQuestion(q.question_id)}
-                          onDelete={() => handleDeleteQuestion(q.question_id)}
-                        />
+                        <div key={q.question_id} className="pdf-block w-full bg-white">
+                          <EditableQuestionCard
+                            question={q}
+                            isRegenerating={regeneratingIds.has(q.question_id)}
+                            onSave={(updates) => handleEditSave(q.question_id, updates)}
+                            onRegenerate={() => handleRegenerateQuestion(q.question_id)}
+                            onDelete={() => handleDeleteQuestion(q.question_id)}
+                          />
+                        </div>
                       ))}
                     </div>
                   )}

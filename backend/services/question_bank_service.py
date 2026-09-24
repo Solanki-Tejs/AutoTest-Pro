@@ -1,10 +1,14 @@
 from databases.mongo import get_mongo_db
 from schemas.question_bank_schema import QuestionBankResponse, QuestionUpdateSchema
 from datetime import datetime, timezone
+from bson.objectid import ObjectId
 
 def get_active_question_bank(exam_id: str) -> dict | None:
     db = get_mongo_db()
-    qb = db.question_bank.find_one({"exam_id": exam_id, "is_active": True})
+    qb = db.question_bank.find_one(
+        {"exam_id": exam_id, "is_active": True},
+        sort=[("version", -1)]
+    )
     if not qb:
         return None
     qb["_id"] = str(qb["_id"])
@@ -62,7 +66,7 @@ def edit_question(exam_id: str, question_id: str, updates: QuestionUpdateSchema,
             
     if updated:
         db.question_bank.update_one(
-            {"_id": qb["_id"]},
+            {"_id": ObjectId(qb["_id"])},
             {"$set": {"question_body": qb["question_body"], "updated_at": datetime.now(timezone.utc)}}
         )
         return True
@@ -84,7 +88,7 @@ def delete_question(exam_id: str, question_id: str) -> bool:
             
     if updated:
         db.question_bank.update_one(
-            {"_id": qb["_id"]},
+            {"_id": ObjectId(qb["_id"])},
             {"$set": {"question_body": qb["question_body"], "updated_at": datetime.now(timezone.utc)}}
         )
         return True

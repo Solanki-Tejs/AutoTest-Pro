@@ -20,7 +20,7 @@ export default function SyllabusUploadModal({
   const [error, setError] = useState("");
   const [success, setSuccess] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
-  
+
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   if (!isOpen) return null;
@@ -42,9 +42,10 @@ export default function SyllabusUploadModal({
         setTitle("");
         setFile(null);
         if (fileInputRef.current) fileInputRef.current.value = "";
-        setSuccess(false);
         onSuccess();
         onClose();
+        setSuccess(false);
+        setLoading(false);
       }, 1500);
     } catch (err: any) {
       setError(err.message || "Failed to upload syllabus");
@@ -119,11 +120,11 @@ export default function SyllabusUploadModal({
             <form onSubmit={handleSubmit}>
               {error && (
                 <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-red-600 mb-5 text-[0.88rem] flex items-center gap-2">
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" /></svg>
                   {error}
                 </div>
               )}
-              
+
               <div className="mb-5">
                 <label className="block text-[0.85rem] font-bold text-slate-700 mb-2 uppercase tracking-wide">Title</label>
                 <input
@@ -136,19 +137,18 @@ export default function SyllabusUploadModal({
                   required
                 />
               </div>
-              
+
               <div className="mb-2">
                 <label className="block text-[0.85rem] font-bold text-slate-700 mb-2 uppercase tracking-wide">Syllabus File</label>
-                
+
                 {!file ? (
-                  <div 
+                  <div
                     onDragOver={onDragOver}
                     onDragLeave={onDragLeave}
                     onDrop={onDrop}
                     onClick={() => !loading && fileInputRef.current?.click()}
-                    className={`border-2 border-dashed rounded-xl p-8 flex flex-col items-center justify-center text-center cursor-pointer transition-colors ${
-                      isDragging ? "border-[#2563eb] bg-[#2563eb]/5" : "border-slate-300 hover:border-slate-400 bg-slate-50"
-                    }`}
+                    className={`border-2 border-dashed rounded-xl p-8 flex flex-col items-center justify-center text-center cursor-pointer transition-colors ${isDragging ? "border-[#2563eb] bg-[#2563eb]/5" : "border-slate-300 hover:border-slate-400 bg-slate-50"
+                      }`}
                   >
                     <div className="w-12 h-12 bg-white rounded-full shadow-sm flex items-center justify-center text-slate-400 text-xl mb-3">
                       📄
@@ -169,8 +169,8 @@ export default function SyllabusUploadModal({
                         <p className="text-slate-500 text-[0.75rem]">{file.name.split('.').pop()?.toUpperCase()} • {formatFileSize(file.size)}</p>
                       </div>
                     </div>
-                    <button 
-                      type="button" 
+                    <button
+                      type="button"
                       onClick={() => setFile(null)}
                       disabled={loading}
                       className="ml-2 w-8 h-8 flex items-center justify-center rounded-full hover:bg-slate-200 text-slate-500 transition-colors shrink-0"
@@ -179,7 +179,7 @@ export default function SyllabusUploadModal({
                     </button>
                   </div>
                 )}
-                
+
                 <input
                   type="file"
                   accept="application/pdf"
@@ -207,9 +207,8 @@ export default function SyllabusUploadModal({
             <button
               onClick={handleSubmit}
               type="submit"
-              className={`px-6 py-2.5 rounded-lg bg-[#2563eb] text-white font-semibold flex items-center gap-2 transition-colors ${
-                (loading || !title.trim() || !file) ? "opacity-60 cursor-not-allowed" : "hover:bg-[#1d4ed8]"
-              }`}
+              className={`px-6 py-2.5 rounded-lg bg-[#2563eb] text-white font-semibold flex items-center gap-2 transition-colors ${(loading || !title.trim() || !file) ? "opacity-60 cursor-not-allowed" : "hover:bg-[#1d4ed8]"
+                }`}
               disabled={loading || !title.trim() || !file}
             >
               {loading && <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />}

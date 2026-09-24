@@ -60,3 +60,13 @@ class PaperGenerationStatus(BaseModel):
     status: str
     progress: Optional[int] = None
     current_section: Optional[str] = None
+
+class QuestionSpecification(BaseModel):
+    section: str
+    type: str
+    marks: int
+    bloom_level: str
+    difficulty: str
+    topic: Optional[str] = None
+    subtopic: Optional[str] = None
+    concept: Optional[str] = None

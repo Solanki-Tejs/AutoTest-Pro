@@ -110,7 +110,7 @@ export default function EditableQuestionCard({
   }
 
   return (
-    <div className={`relative group ${isRegenerating ? 'opacity-50' : ''}`}>
+    <div className={`relative group break-inside-avoid ${isRegenerating ? 'opacity-50' : ''}`}>
       {isRegenerating && (
         <div className="absolute inset-0 bg-white/50 flex items-center justify-center z-10 backdrop-blur-[1px]">
           <div className="w-6 h-6 border-4 border-slate-200 border-t-black rounded-full animate-spin" />
