@@ -92,6 +92,9 @@ export async function updateExam(
     duration_minutes: number;
     difficulty: string;
     selected_pdf_ids: string[];
+    start_time: string | null;
+    end_time: string | null;
+    status: string;
   }>
 ) {
   const res = await fetch(`${BASE_URL}/exams/${examId}`, {
@@ -114,6 +117,15 @@ export async function getExam(token: string, examId: string): Promise<Exam> {
   if (!res.ok) {
     throw new Error("Failed to fetch exam");
   }
+  return res.json();
+}
+
+export async function getStudentExams(token: string, classId: number): Promise<Exam[]> {
+  const res = await fetch(`${BASE_URL}/classes/${classId}/student/exams`, {
+    headers: authHeaders(token),
+    cache: "no-store",
+  });
+  if (!res.ok) throw new Error("Failed to load exams");
   return res.json();
 }
 

@@ -411,9 +411,9 @@ export default function TeacherDashboard() {
                       <span className="capitalize">{exam.difficulty}</span>
                     </div>
                     <button 
-                      onClick={() => router.push(exam.status === 'ready' ? `/teacher/exams/${exam.id}/paper` : `/teacher/exams/${exam.id}/blueprint`)}
+                      onClick={() => router.push(exam.status === 'published' ? `/teacher/exams/${exam.id}/paper` : `/teacher/exams/${exam.id}/blueprint`)}
                       className="w-full py-2 bg-slate-50 hover:bg-[#2563eb]/10 border border-slate-200 hover:border-[#2563eb]/30 text-slate-700 hover:text-[#2563eb] rounded-md text-[0.85rem] font-semibold transition-colors cursor-pointer mt-2">
-                      {exam.status === 'ready' ? 'View Approved Paper' : 'Edit Blueprint & Generate'}
+                      {exam.status === 'published' ? 'View Approved Paper' : 'Edit Blueprint & Generate'}
                     </button>
                   </div>
                 ))}

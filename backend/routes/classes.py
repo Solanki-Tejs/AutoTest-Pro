@@ -153,3 +153,14 @@ async def get_my_memberships(
 ):
     student_id = int(current_user["sub"])
     return get_student_memberships(student_id, db)
+
+
+@router.get("/{class_id}/student/exams")
+async def get_student_class_exams(
+    class_id: int,
+    current_user=Depends(require_roles("student")),
+    db: Session = Depends(get_db),
+):
+    student_id = int(current_user["sub"])
+    from services.exam_service import get_published_exams_for_student
+    return get_published_exams_for_student(student_id, class_id, db)

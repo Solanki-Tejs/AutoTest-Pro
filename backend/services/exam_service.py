@@ -127,3 +127,18 @@ def teacher_can_access_exam(teacher_id: int, exam_id: str, db: Session) -> bool:
     """)
     result = db.execute(query, {"exam_id": exam_id, "teacher_id": teacher_id})
     return result.first() is not None
+
+def get_published_exams_for_student(student_id: int, class_id: int, db: Session) -> list[dict]:
+    ensure_tables(db)
+    query = text("""
+        SELECT e.id, e.class_id, e.title, e.total_marks, e.duration_minutes, e.difficulty, e.start_time, e.end_time, e.status, e.created_at
+        FROM exams e
+        JOIN class_enrollments cm ON e.class_id = cm.class_id
+        WHERE e.class_id = :class_id 
+          AND cm.student_id = :student_id 
+          AND cm.status = 'approved'
+          AND e.status = 'published'
+        ORDER BY e.start_time ASC, e.created_at DESC
+    """)
+    result = db.execute(query, {"class_id": class_id, "student_id": student_id})
+    return [dict(row) for row in result.mappings()]

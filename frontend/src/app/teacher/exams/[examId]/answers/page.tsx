@@ -152,13 +152,7 @@ export default function AnswersPage() {
       return;
     }
 
-    try {
-      await approveAnswerBank(token, examId);
-      alert("Answer Key approved successfully! The exam is now READY.");
-      router.push("/teacher/dashboard");
-    } catch (e: any) {
-      alert(e.message || "Failed to approve answer key");
-    }
+    router.push(`/teacher/exams/${examId}/publish`);
   }
 
   async function handleEditSave(answerId: string, updates: any) {
@@ -274,7 +268,7 @@ export default function AnswersPage() {
               className="px-6 py-2 bg-[#16a34a] hover:bg-[#15803d] text-white text-[0.9rem] font-bold rounded-md shadow-sm transition-colors flex items-center gap-2"
             >
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
-              Approve Answer Key &rarr;
+              {exam?.status === "published" ? "Publish Settings" : "Continue to Publish"} &rarr;
             </button>
           </div>
         )}

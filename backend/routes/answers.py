@@ -60,6 +60,4 @@ def approve_answer_bank_endpoint(exam_id: str, db: Session = Depends(get_db), cu
         
     update_answer_bank(exam_id, {"status": "approved"})
     
-    update_exam(exam_id, {"status": "ready"}, db)
-    
-    return {"message": "Answer bank approved and Exam is READY"}
+    return {"message": "Answer bank approved"}

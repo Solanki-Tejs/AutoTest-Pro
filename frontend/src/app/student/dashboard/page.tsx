@@ -10,6 +10,7 @@ import {
   Membership,
 } from "@/app/lib/classes";
 import { fetchSyllabusList, downloadSyllabus, viewSyllabus, SyllabusItem } from "@/app/lib/syllabus";
+import { Exam, getStudentExams } from "@/app/lib/exams";
 import { useRouter } from "next/navigation";
 
 type Tab = "join" | "my-classes" | "profile";
@@ -290,7 +291,7 @@ export default function StudentDashboard() {
 
         {/* ── My Classes Tab ── */}
         {tab === "my-classes" && selectedClass ? (
-          <StudentClassDetailView m={selectedClass} onBack={() => setSelectedClass(null)} />
+          <StudentClassDetailView m={selectedClass} onBack={() => setSelectedClass(null)} token={token!} />
         ) : tab === "my-classes" && (
           <div className="animate-fade-up">
             <div className="mb-8">
@@ -418,9 +419,13 @@ function StatBlock({ label, value, color }: { label: string; value: number; colo
   );
 }
 
-function StudentClassDetailView({ m, onBack }: { m: Membership; onBack: () => void }) {
+function StudentClassDetailView({ m, onBack, token }: { m: Membership; onBack: () => void; token: string }) {
+  const [activeTab, setActiveTab] = useState<"syllabus" | "exams">("syllabus");
   const [syllabusList, setSyllabusList] = useState<SyllabusItem[]>([]);
   const [loading, setLoading] = useState(true);
+
+  const [examList, setExamList] = useState<Exam[]>([]);
+  const [examsLoading, setExamsLoading] = useState(true);
 
   const loadSyllabus = useCallback(() => {
     setLoading(true);
@@ -430,9 +435,18 @@ function StudentClassDetailView({ m, onBack }: { m: Membership; onBack: () => vo
       .finally(() => setLoading(false));
   }, [m.class_id]);
 
+  const loadExams = useCallback(() => {
+    setExamsLoading(true);
+    getStudentExams(token, m.class_id)
+      .then(setExamList)
+      .catch(() => {})
+      .finally(() => setExamsLoading(false));
+  }, [token, m.class_id]);
+
   useEffect(() => {
     loadSyllabus();
-  }, [loadSyllabus]);
+    loadExams();
+  }, [loadSyllabus, loadExams]);
 
   return (
     <div className="animate-fade-in">
@@ -453,89 +467,201 @@ function StudentClassDetailView({ m, onBack }: { m: Membership; onBack: () => vo
         </div>
       </div>
 
-      <div className="mb-8">
-        <div className="flex items-center justify-between mb-6 border-b border-slate-200">
-          <div className="px-4 py-3 border-b-2 border-green-500 text-green-700 font-bold text-[0.95rem]">
-            Syllabus
-          </div>
-          <button
-            onClick={loadSyllabus}
-            disabled={loading}
-            className={`p-1.5 rounded-md border border-slate-200 text-slate-500 hover:bg-slate-50 hover:text-slate-700 transition-colors mr-2 mb-2 ${loading ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
-            title="Refresh Syllabus"
-          >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={loading ? 'animate-spin' : ''}>
-              <path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8" />
-              <path d="M21 3v5h-5" />
-            </svg>
-          </button>
-        </div>
+      <div className="mb-6 flex items-center gap-6 border-b border-slate-200">
+        <button
+          onClick={() => setActiveTab("syllabus")}
+          className={`py-3 px-1 font-bold text-[0.95rem] border-b-2 transition-colors ${
+            activeTab === "syllabus" ? "border-green-500 text-green-700" : "border-transparent text-slate-500 hover:text-slate-700"
+          }`}
+        >
+          Syllabus
+        </button>
+        <button
+          onClick={() => setActiveTab("exams")}
+          className={`py-3 px-1 font-bold text-[0.95rem] border-b-2 transition-colors ${
+            activeTab === "exams" ? "border-blue-500 text-blue-700" : "border-transparent text-slate-500 hover:text-slate-700"
+          }`}
+        >
+          Exams
+        </button>
+      </div>
 
-        {loading ? (
-          <div className="bg-white border border-slate-200 rounded-xl p-8 text-center shadow-sm">
-            <div className="w-7 h-7 border-4 border-slate-200 border-t-green-500 rounded-full animate-spin mx-auto mb-3" />
-            <p className="text-slate-500 text-[0.88rem]">Loading syllabus…</p>
+      {activeTab === "syllabus" && (
+        <div className="mb-8 animate-fade-in">
+          <div className="flex items-center justify-end mb-4">
+            <button
+              onClick={loadSyllabus}
+              disabled={loading}
+              className={`p-1.5 rounded-md border border-slate-200 text-slate-500 hover:bg-slate-50 hover:text-slate-700 transition-colors ${loading ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
+              title="Refresh Syllabus"
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={loading ? 'animate-spin' : ''}>
+                <path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8" />
+                <path d="M21 3v5h-5" />
+              </svg>
+            </button>
           </div>
-        ) : syllabusList.length === 0 ? (
-          <div className="bg-white border border-slate-200 rounded-xl p-10 flex flex-col items-center justify-center text-center shadow-sm">
-            <div className="text-[3rem] mb-3">📚</div>
-            <h3 className="text-lg font-bold text-slate-900 mb-1">No syllabus yet</h3>
-            <p className="text-slate-500 text-[0.85rem]">
-              The teacher has not uploaded any syllabus material for this class yet.
-            </p>
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 gap-3">
-            {syllabusList.map((s) => {
-              const isPdf = s.file_ref.toLowerCase().endsWith('.pdf');
-              return (
-                <div key={s.id} className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm hover:shadow-md hover:border-slate-300 transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                  <div className="flex items-start gap-4">
-                    <div className={`w-12 h-12 rounded-lg flex items-center justify-center text-2xl shrink-0 ${isPdf ? 'bg-red-50 text-red-500' : 'bg-slate-100 text-slate-400'}`}>
-                      {isPdf ? '📕' : '📄'}
+
+          {loading ? (
+            <div className="bg-white border border-slate-200 rounded-xl p-8 text-center shadow-sm">
+              <div className="w-7 h-7 border-4 border-slate-200 border-t-green-500 rounded-full animate-spin mx-auto mb-3" />
+              <p className="text-slate-500 text-[0.88rem]">Loading syllabus…</p>
+            </div>
+          ) : syllabusList.length === 0 ? (
+            <div className="bg-white border border-slate-200 rounded-xl p-10 flex flex-col items-center justify-center text-center shadow-sm">
+              <div className="text-[3rem] mb-3">📚</div>
+              <h3 className="text-lg font-bold text-slate-900 mb-1">No syllabus yet</h3>
+              <p className="text-slate-500 text-[0.85rem]">
+                The teacher has not uploaded any syllabus material for this class yet.
+              </p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 gap-3">
+              {syllabusList.map((s) => {
+                const isPdf = s.file_ref.toLowerCase().endsWith('.pdf');
+                return (
+                  <div key={s.id} className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm hover:shadow-md hover:border-slate-300 transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                    <div className="flex items-start gap-4">
+                      <div className={`w-12 h-12 rounded-lg flex items-center justify-center text-2xl shrink-0 ${isPdf ? 'bg-red-50 text-red-500' : 'bg-slate-100 text-slate-400'}`}>
+                        {isPdf ? '📕' : '📄'}
+                      </div>
+                      <div>
+                        <h4 className="font-bold text-slate-900 text-[0.95rem] mb-0.5">{s.title}</h4>
+                        <p className="text-slate-500 text-[0.8rem] mb-1 font-mono">{s.file_ref.split('/').pop()}</p>
+                        <p className="text-slate-400 text-[0.75rem]">
+                          Uploaded {new Date(s.created_at).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}
+                        </p>
+                        {!isPdf && <p className="text-amber-600 text-[0.75rem] font-semibold mt-1">Unsupported file format</p>}
+                        {s.status && (
+                          <div className="flex items-center gap-2 mt-1.5">
+                            <span className={`text-[0.7rem] px-2 py-0.5 rounded-full font-semibold ${s.status === 'READY' ? 'bg-green-100 text-green-700' : s.status === 'FAILED' ? 'bg-red-100 text-red-700' : 'bg-blue-100 text-blue-700'}`}>
+                              {s.status === 'READY' ? 'Processed' : s.status === 'FAILED' ? 'Failed' : `Processing: ${s.stage?.replace('_', ' ') || 'Starting'}`}
+                            </span>
+                            {s.error && <span className="text-red-500 text-[0.75rem] max-w-[200px] truncate" title={s.error}>{s.error}</span>}
+                          </div>
+                        )}
+                      </div>
                     </div>
-                    <div>
-                      <h4 className="font-bold text-slate-900 text-[0.95rem] mb-0.5">{s.title}</h4>
-                      <p className="text-slate-500 text-[0.8rem] mb-1 font-mono">{s.file_ref.split('/').pop()}</p>
-                      <p className="text-slate-400 text-[0.75rem]">
-                        Uploaded {new Date(s.created_at).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}
-                      </p>
-                      {!isPdf && <p className="text-amber-600 text-[0.75rem] font-semibold mt-1">Unsupported file format</p>}
-                      {s.status && (
-                        <div className="flex items-center gap-2 mt-1.5">
-                          <span className={`text-[0.7rem] px-2 py-0.5 rounded-full font-semibold ${s.status === 'READY' ? 'bg-green-100 text-green-700' : s.status === 'FAILED' ? 'bg-red-100 text-red-700' : 'bg-blue-100 text-blue-700'}`}>
-                            {s.status === 'READY' ? 'Processed' : s.status === 'FAILED' ? 'Failed' : `Processing: ${s.stage?.replace('_', ' ') || 'Starting'}`}
-                          </span>
-                          {s.error && <span className="text-red-500 text-[0.75rem] max-w-[200px] truncate" title={s.error}>{s.error}</span>}
-                        </div>
-                      )}
+                    <div className="flex items-center gap-2 shrink-0 self-end sm:self-auto">
+                      <button
+                        onClick={() => viewSyllabus(s.id)}
+                        disabled={!isPdf}
+                        className={`px-3.5 py-1.5 rounded-md border text-[0.8rem] font-semibold transition-colors ${
+                          isPdf 
+                            ? 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50 hover:border-slate-300' 
+                            : 'border-slate-100 bg-slate-50 text-slate-400 cursor-not-allowed'
+                        }`}
+                      >
+                        View PDF
+                      </button>
+                      <button
+                        onClick={() => downloadSyllabus(s.id, s.title)}
+                        className="px-3.5 py-1.5 rounded-md border border-slate-200 bg-white text-slate-700 text-[0.8rem] font-semibold hover:bg-slate-50 hover:border-slate-300 transition-colors"
+                      >
+                        Download
+                      </button>
                     </div>
                   </div>
-                  <div className="flex items-center gap-2 shrink-0 self-end sm:self-auto">
-                    <button
-                      onClick={() => viewSyllabus(s.id)}
-                      disabled={!isPdf}
-                      className={`px-3.5 py-1.5 rounded-md border text-[0.8rem] font-semibold transition-colors ${
-                        isPdf 
-                          ? 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50 hover:border-slate-300' 
-                          : 'border-slate-100 bg-slate-50 text-slate-400 cursor-not-allowed'
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+
+      {activeTab === "exams" && (
+        <div className="mb-8 animate-fade-in">
+          <div className="flex items-center justify-end mb-4">
+            <button
+              onClick={loadExams}
+              disabled={examsLoading}
+              className={`p-1.5 rounded-md border border-slate-200 text-slate-500 hover:bg-slate-50 hover:text-slate-700 transition-colors ${examsLoading ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
+              title="Refresh Exams"
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={examsLoading ? 'animate-spin' : ''}>
+                <path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8" />
+                <path d="M21 3v5h-5" />
+              </svg>
+            </button>
+          </div>
+
+          {examsLoading ? (
+            <div className="bg-white border border-slate-200 rounded-xl p-8 text-center shadow-sm">
+              <div className="w-7 h-7 border-4 border-slate-200 border-t-blue-500 rounded-full animate-spin mx-auto mb-3" />
+              <p className="text-slate-500 text-[0.88rem]">Loading exams…</p>
+            </div>
+          ) : examList.length === 0 ? (
+            <div className="bg-white border border-slate-200 rounded-xl p-10 flex flex-col items-center justify-center text-center shadow-sm">
+              <div className="text-[3rem] mb-3">📝</div>
+              <h3 className="text-lg font-bold text-slate-900 mb-1">No exams available</h3>
+              <p className="text-slate-500 text-[0.85rem]">
+                There are no published exams for this class at the moment.
+              </p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {examList.map((exam) => {
+                const now = new Date();
+                const startTime = exam.start_time ? new Date(exam.start_time) : null;
+                const endTime = exam.end_time ? new Date(exam.end_time) : null;
+                
+                let statusInfo = { label: "Available", color: "bg-blue-100 text-blue-700", actionText: "Take Exam", actionDisabled: true };
+                
+                if (startTime && endTime) {
+                  if (now < startTime) {
+                    statusInfo = { label: "Upcoming", color: "bg-indigo-100 text-indigo-700", actionText: "Starts soon", actionDisabled: true };
+                  } else if (now > endTime) {
+                    statusInfo = { label: "Ended", color: "bg-slate-100 text-slate-600", actionText: "Missed", actionDisabled: true };
+                  } else {
+                    statusInfo = { label: "Active", color: "bg-green-100 text-green-700", actionText: "Take Exam", actionDisabled: false }; // Action still disabled functionally for now
+                  }
+                }
+
+                return (
+                  <div key={exam.id} className="bg-white border border-slate-200 rounded-xl p-6 shadow-sm hover:shadow-md transition-shadow flex flex-col h-full">
+                    <div className="flex justify-between items-start mb-3">
+                      <h4 className="font-bold text-slate-900 text-lg line-clamp-2 pr-4">{exam.title}</h4>
+                      <span className={`text-[0.7rem] px-2.5 py-1 rounded-full font-bold uppercase tracking-wider shrink-0 ${statusInfo.color}`}>
+                        {statusInfo.label}
+                      </span>
+                    </div>
+                    
+                    <div className="flex flex-wrap gap-x-4 gap-y-2 text-[0.85rem] text-slate-600 mb-4">
+                      <div className="flex items-center gap-1.5"><span className="font-semibold text-slate-700">Marks:</span> {exam.total_marks}</div>
+                      <div className="flex items-center gap-1.5"><span className="font-semibold text-slate-700">Duration:</span> {exam.duration_minutes} min</div>
+                      <div className="flex items-center gap-1.5"><span className="font-semibold text-slate-700">Level:</span> <span className="capitalize">{exam.difficulty}</span></div>
+                    </div>
+                    
+                    {(startTime && endTime) && (
+                      <div className="bg-slate-50 rounded-lg p-3 text-[0.8rem] text-slate-600 mb-5 border border-slate-100 flex-grow">
+                        <div className="flex items-center gap-2 mb-1">
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>
+                          <span className="font-medium text-slate-700">Window:</span>
+                        </div>
+                        <div className="pl-6 space-y-0.5">
+                          <div><span className="text-slate-400">Opens:</span> {startTime.toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" })}</div>
+                          <div><span className="text-slate-400">Closes:</span> {endTime.toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" })}</div>
+                        </div>
+                      </div>
+                    )}
+                    
+                    <button 
+                      disabled={true} 
+                      className={`w-full py-2.5 rounded-lg font-bold text-[0.9rem] transition-colors mt-auto ${
+                        statusInfo.actionDisabled === false // Currently always false as we haven't implemented it
+                          ? "bg-[#2563eb] hover:bg-[#1d4ed8] text-white cursor-pointer"
+                          : "bg-slate-100 text-slate-400 cursor-not-allowed border border-slate-200"
                       }`}
                     >
-                      View PDF
-                    </button>
-                    <button
-                      onClick={() => downloadSyllabus(s.id, s.title)}
-                      className="px-3.5 py-1.5 rounded-md border border-slate-200 bg-white text-slate-700 text-[0.8rem] font-semibold hover:bg-slate-50 hover:border-slate-300 transition-colors"
-                    >
-                      Download
+                      {statusInfo.actionText} (Coming Soon)
                     </button>
                   </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }

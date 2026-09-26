@@ -33,7 +33,8 @@ export default function ExamWorkspaceLayout(props: {
     { id: "syllabus", label: "Syllabus", path: `/teacher/exams/${params.examId}/syllabus` },
     { id: "blueprint", label: "Blueprint", path: `/teacher/exams/${params.examId}/blueprint` },
     { id: "paper", label: "Paper", path: `/teacher/exams/${params.examId}/paper` },
-    { id: "answers", label: "Answers", path: `/teacher/exams/${params.examId}/answers` }
+    { id: "answers", label: "Answers", path: `/teacher/exams/${params.examId}/answers` },
+    { id: "publish", label: "Publish", path: `/teacher/exams/${params.examId}/publish` }
   ];
 
   // Determine current step index
