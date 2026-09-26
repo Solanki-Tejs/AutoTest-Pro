@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback, use } from "react";
 import { useRouter } from "next/navigation";
 import { getStoredToken, getStoredUser } from "@/app/lib/auth";
-import { getExam, updateExam, getAvailableSyllabuses, SyllabusAvailable, Exam } from "@/app/lib/exams";
+import { getExam, updateExam, getAvailableSyllabuses, SyllabusAvailable, Exam, getExamBlueprint } from "@/app/lib/exams";
 import debounce from "lodash/debounce";
 
 export default function SyllabusStepPage(props: { params: Promise<{ examId: string }> }) {
@@ -13,6 +13,8 @@ export default function SyllabusStepPage(props: { params: Promise<{ examId: stri
   const [exam, setExam] = useState<Exam | null>(null);
   const [syllabuses, setSyllabuses] = useState<SyllabusAvailable[]>([]);
   const [selectedPdfs, setSelectedPdfs] = useState<Set<string>>(new Set());
+  const [hasBlueprint, setHasBlueprint] = useState(false);
+  const [isSyllabusLocked, setIsSyllabusLocked] = useState(false);
   
   const [loading, setLoading] = useState(true);
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
@@ -31,14 +33,18 @@ export default function SyllabusStepPage(props: { params: Promise<{ examId: stri
     if (!token) return;
     async function load() {
       try {
-        const [exm, sylls] = await Promise.all([
+        const [exm, sylls, blueprint] = await Promise.all([
           getExam(token!, params.examId),
-          getAvailableSyllabuses(token!)
+          getAvailableSyllabuses(token!),
+          getExamBlueprint(token!, params.examId)
         ]);
         setExam(exm);
         // Only show syllabuses matching the exam's class
         setSyllabuses(sylls.filter(s => s.class_id === exm.class_id));
         setSelectedPdfs(new Set(exm.selected_pdf_ids || []));
+        const blueprintExists = blueprint.sections && blueprint.sections.length > 0;
+        setHasBlueprint(blueprintExists);
+        setIsSyllabusLocked(blueprintExists);
       } catch (err: any) {
         console.error(err);
       } finally {
@@ -67,6 +73,8 @@ export default function SyllabusStepPage(props: { params: Promise<{ examId: stri
   );
 
   const togglePdf = (id: string) => {
+    if (exam?.status === "published" || (hasBlueprint && isSyllabusLocked)) return;
+    
     const next = new Set(selectedPdfs);
     if (next.has(id)) next.delete(id);
     else next.add(id);
@@ -76,6 +84,8 @@ export default function SyllabusStepPage(props: { params: Promise<{ examId: stri
       debouncedSave(Array.from(next), token);
     }
   };
+
+  const isPublished = exam?.status === "published";
 
   if (loading) {
     return <div className="py-20 text-center text-slate-500">Loading Syllabus Options...</div>;
@@ -97,7 +107,26 @@ export default function SyllabusStepPage(props: { params: Promise<{ examId: stri
       </div>
 
       <div className="bg-white p-8 rounded-xl shadow-sm border border-slate-200">
-        <h3 className="text-[1.1rem] font-bold text-slate-900 mb-2">Select Syllabus Files</h3>
+        {isPublished && (
+          <div className="mb-6 p-4 bg-amber-50 text-amber-800 border border-amber-200 rounded-md font-semibold text-[0.9rem]">
+            This exam is published. The syllabus cannot be modified.
+          </div>
+        )}
+        <div className="flex items-center justify-between mb-2">
+          <h3 className="text-[1.1rem] font-bold text-slate-900">Select Syllabus Files</h3>
+          {hasBlueprint && isSyllabusLocked && !isPublished && (
+            <button
+              onClick={() => {
+                if (confirm("Changing syllabus will require you to regenerate the entire paper and all manual edits will be lost. Are you sure?")) {
+                  setIsSyllabusLocked(false);
+                }
+              }}
+              className="text-xs text-[#2563eb] hover:text-[#1d4ed8] font-bold uppercase tracking-wider bg-[#2563eb]/10 px-3 py-1 rounded-md"
+            >
+              Unlock Selection
+            </button>
+          )}
+        </div>
         <p className="text-slate-500 text-[0.85rem] mb-6">Only processed syllabus files with topic extraction completed are shown.</p>
         
         {syllabuses.length === 0 ? (
@@ -114,9 +143,12 @@ export default function SyllabusStepPage(props: { params: Promise<{ examId: stri
                   <label className="flex items-start gap-4 p-4 cursor-pointer">
                     <input 
                       type="checkbox" 
-                      className="mt-1 w-5 h-5 text-[#2563eb] rounded border-slate-300 focus:ring-[#2563eb]" 
+                      className="mt-1 w-5 h-5 text-[#2563eb] rounded border-slate-300 focus:ring-[#2563eb] disabled:opacity-50 disabled:cursor-not-allowed" 
                       checked={isSelected}
-                      onChange={() => togglePdf(pdf.id)}
+                      disabled={isPublished || (hasBlueprint && isSyllabusLocked)}
+                      onChange={() => {
+                        if (!isPublished) togglePdf(pdf.id);
+                      }}
                     />
                     <div>
                       <div className="font-bold text-slate-800">{pdf.title}</div>

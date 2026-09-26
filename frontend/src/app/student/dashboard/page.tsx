@@ -602,8 +602,10 @@ function StudentClassDetailView({ m, onBack, token }: { m: Membership; onBack: (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {examList.map((exam) => {
                 const now = new Date();
-                const startTime = exam.start_time ? new Date(exam.start_time) : null;
-                const endTime = exam.end_time ? new Date(exam.end_time) : null;
+                const stStr = exam.start_time ? (exam.start_time.endsWith('Z') ? exam.start_time : exam.start_time + 'Z') : null;
+                const etStr = exam.end_time ? (exam.end_time.endsWith('Z') ? exam.end_time : exam.end_time + 'Z') : null;
+                const startTime = stStr ? new Date(stStr) : null;
+                const endTime = etStr ? new Date(etStr) : null;
                 
                 let statusInfo = { label: "Available", color: "bg-blue-100 text-blue-700", actionText: "Take Exam", actionDisabled: true };
                 

@@ -14,6 +14,7 @@ class SectionResponse(SectionCreate):
     total_marks: int
 
 class BlueprintCreate(BaseModel):
+    version: Optional[int] = None
     sections: List[SectionCreate]
 
 class BlueprintResponse(BaseModel):

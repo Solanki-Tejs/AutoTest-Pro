@@ -56,10 +56,7 @@ def get_context_for_exam(exam: dict, db: Session) -> str:
     chunks_text = [row.content for row in result.fetchmany(15)]
     return "\n\n---\n\n".join(chunks_text)
 
-def generate_section_questions(section: dict, context: str, existing_questions: str = "") -> List[Dict[str, Any]]:
-    """
-    Calls Ollama to generate questions for a specific section based on context.
-    """
+def _build_prompt_and_schema(section: dict, context: str, existing_questions: str = "") -> tuple[str, dict]:
     q_type = section.get("type", "mcq")
     count = section.get("count", 1)
     marks = section.get("marks_each", 1)
@@ -119,6 +116,39 @@ Syllabus Context:
 
 Respond STRICTLY with JSON matching the required schema.
 """
+    return prompt, json_schema
+
+def generate_section_questions_with_gemini(section: dict, context: str, existing_questions: str = "") -> List[Dict[str, Any]]:
+    gemini_api_key = os.getenv("GEMINI_API_KEY", "").strip()
+    gemini_model = os.getenv("GEMINI_MODEL", "gemini-2.5-flash").strip()
+    if not gemini_api_key:
+        raise ValueError("GEMINI_API_KEY is missing or empty")
+
+    prompt, json_schema = _build_prompt_and_schema(section, context, existing_questions)
+
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/{gemini_model}:generateContent?key={gemini_api_key}"
+    payload = {
+        "contents": [{"parts": [{"text": prompt}]}],
+        "generationConfig": {
+            "temperature": 0.3,
+            "responseMimeType": "application/json",
+            "responseSchema": json_schema
+        }
+    }
+
+    req = urllib.request.Request(
+        url,
+        data=json.dumps(payload).encode('utf-8'),
+        headers={'Content-Type': 'application/json'},
+        method='POST'
+    )
+    with urllib.request.urlopen(req, timeout=120) as response:
+        result = json.loads(response.read().decode('utf-8'))
+        content = result.get("candidates", [])[0].get("content", {}).get("parts", [])[0].get("text", "{}")
+        return json.loads(content)
+
+def generate_section_questions_with_ollama(section: dict, context: str, existing_questions: str = "") -> List[Dict[str, Any]]:
+    prompt, json_schema = _build_prompt_and_schema(section, context, existing_questions)
 
     payload = {
         "model": OLLAMA_GENERATION_MODEL,
@@ -130,19 +160,27 @@ Respond STRICTLY with JSON matching the required schema.
         }
     }
     
+    req = urllib.request.Request(
+        OLLAMA_API_URL, 
+        data=json.dumps(payload).encode('utf-8'),
+        headers={'Content-Type': 'application/json'},
+        method='POST'
+    )
+    with urllib.request.urlopen(req, timeout=120) as response:
+        result = json.loads(response.read().decode('utf-8'))
+        return json.loads(result.get("response", "{}"))
+
+def generate_section_questions(section: dict, context: str, existing_questions: str = "") -> dict:
     try:
-        req = urllib.request.Request(
-            OLLAMA_API_URL, 
-            data=json.dumps(payload).encode('utf-8'),
-            headers={'Content-Type': 'application/json'},
-            method='POST'
-        )
-        with urllib.request.urlopen(req, timeout=120) as response:
-            result = json.loads(response.read().decode('utf-8'))
-            return json.loads(result.get("response", "{}"))
+        print("[TIMING] Attempting to generate questions with Google AI Studio (Gemini)...")
+        return generate_section_questions_with_gemini(section, context, existing_questions)
     except Exception as e:
-        print(f"Error calling Ollama: {e}")
-        return {"questions": []}
+        print(f"[TIMING] Gemini generation failed ({e}). Falling back to local Ollama model...")
+        try:
+            return generate_section_questions_with_ollama(section, context, existing_questions)
+        except Exception as e2:
+            print(f"Error calling Ollama: {e2}")
+            return {"questions": []}
 
 def generate_exam_paper_job(exam_id: str, db: Session):
     """

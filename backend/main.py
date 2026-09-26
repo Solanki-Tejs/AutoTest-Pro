@@ -30,8 +30,9 @@ app.include_router(syllabus.router, prefix="/api", tags=["Syllabus"])
 app.include_router(topics.router, prefix="/api", tags=["Topics"])
 app.include_router(question_bank.router, prefix="/api/exams", tags=["Question Bank"])
 
-from routes import exams, answers
+from routes import exams, answers, student_exams
 app.include_router(exams.router, prefix="/api/exams", tags=["Exams"])
+app.include_router(student_exams.router, prefix="/api/student/exams", tags=["Student Exams"])
 app.include_router(answers.router, tags=["Answers"])
 
 

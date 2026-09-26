@@ -71,7 +71,13 @@ export default function PaperEditorPage() {
             const bpVer = pb.generation.blueprint_version || 1;
             const pbSylls = [...(pb.generation.syllabus_ids || [])].sort();
             const exSylls = [...(ex.selected_pdf_ids || [])].sort();
-            if (bpVer !== blp.version || JSON.stringify(pbSylls) !== JSON.stringify(exSylls)) {
+            
+            let paperMarks = 0;
+            pb.question_body?.sections?.forEach(sec => {
+              sec.questions?.forEach(q => paperMarks += (q.mark || 0));
+            });
+            
+            if (bpVer !== blp.version || JSON.stringify(pbSylls) !== JSON.stringify(exSylls) || paperMarks !== ex.total_marks) {
               setIsStale(true);
             }
           }
@@ -310,6 +316,8 @@ export default function PaperEditorPage() {
 
   if (!exam) return <div className="p-8 text-red-600">Exam not found.</div>;
 
+  const isPublished = exam.status === "published";
+
   return (
     <div className="animate-fade-in">
       <div className="flex items-center justify-between mb-6 print:hidden">
@@ -329,14 +337,16 @@ export default function PaperEditorPage() {
             </button>
             <button
               onClick={handleGenerateFullPaper}
-              className="px-4 py-2 bg-white hover:bg-slate-50 border border-slate-300 text-slate-700 text-[0.9rem] font-bold rounded-md shadow-sm transition-colors flex items-center gap-2"
+              disabled={isPublished}
+              className="px-4 py-2 bg-white hover:bg-slate-50 border border-slate-300 text-slate-700 text-[0.9rem] font-bold rounded-md shadow-sm transition-colors flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21.5 2v6h-6M2.13 15.57a9 9 0 1 0 3.84-10.36L2 2" /></svg>
               Regenerate All
             </button>
             <button
               onClick={handleApprove}
-              className="px-6 py-2 bg-[#16a34a] hover:bg-[#15803d] text-white text-[0.9rem] font-bold rounded-md shadow-sm transition-colors flex items-center gap-2"
+              disabled={isPublished}
+              className="px-6 py-2 bg-[#16a34a] hover:bg-[#15803d] text-white text-[0.9rem] font-bold rounded-md shadow-sm transition-colors flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
               Approve Paper &rarr;
@@ -361,6 +371,20 @@ export default function PaperEditorPage() {
       )}
 
       <div className="max-w-4xl mx-auto px-6 py-8">
+        {isPublished && paper && !generating && (
+          <div className="mb-6 p-4 bg-amber-50 border border-amber-200 rounded-lg flex items-start gap-4 animate-fade-in print:hidden">
+            <div className="text-amber-500 mt-0.5">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" /><line x1="12" y1="9" x2="12" y2="13" /><line x1="12" y1="17" x2="12.01" y2="17" /></svg>
+            </div>
+            <div>
+              <h4 className="text-amber-800 font-bold mb-1">Exam is Published</h4>
+              <p className="text-amber-700 text-[0.9rem]">
+                This exam has been published. The question paper can no longer be regenerated or modified.
+              </p>
+            </div>
+          </div>
+        )}
+
         {error && (
           <div className="p-4 bg-red-50 border border-red-200 rounded-lg text-red-700 mb-8 flex items-start gap-3">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="mt-0.5 shrink-0"><circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" /></svg>
@@ -417,6 +441,7 @@ export default function PaperEditorPage() {
                         <div key={q.question_id} className="pdf-block w-full bg-white">
                           <EditableQuestionCard
                             question={q}
+                            disabled={isPublished}
                             isRegenerating={regeneratingIds.has(q.question_id)}
                             onSave={(updates) => handleEditSave(q.question_id, updates)}
                             onRegenerate={() => handleRegenerateQuestion(q.question_id)}

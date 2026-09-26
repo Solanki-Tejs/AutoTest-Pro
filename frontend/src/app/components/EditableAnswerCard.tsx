@@ -5,11 +5,12 @@ interface Props {
   question: Question;
   answer?: Answer;
   isRegenerating: boolean;
+  disabled?: boolean;
   onSave: (updates: Partial<Answer>) => Promise<void>;
   onRegenerate: () => Promise<void>;
 }
 
-export default function EditableAnswerCard({ question, answer, isRegenerating, onSave, onRegenerate }: Props) {
+export default function EditableAnswerCard({ question, answer, isRegenerating, disabled, onSave, onRegenerate }: Props) {
   const [isEditing, setIsEditing] = useState(false);
   const [editedText, setEditedText] = useState(answer?.answer_text || "");
   const [editedKey, setEditedKey] = useState(answer?.answer_key || "");
@@ -58,11 +59,11 @@ export default function EditableAnswerCard({ question, answer, isRegenerating, o
           </h4>
           {!isEditing && answer && (
             <div className="flex gap-3">
-              <button onClick={() => setIsEditing(true)} className="text-sm font-semibold text-[#2563eb] hover:text-blue-800 transition-colors flex items-center gap-1">
+              <button onClick={() => setIsEditing(true)} disabled={disabled} className="text-sm font-semibold text-[#2563eb] hover:text-blue-800 transition-colors flex items-center gap-1 disabled:opacity-50 disabled:cursor-not-allowed">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"/></svg>
                 Edit
               </button>
-              <button onClick={handleRegenerate} disabled={isRegenerating} className="text-sm font-semibold text-slate-500 hover:text-slate-800 transition-colors disabled:opacity-50 flex items-center gap-1">
+              <button onClick={handleRegenerate} disabled={isRegenerating || disabled} className="text-sm font-semibold text-slate-500 hover:text-slate-800 transition-colors disabled:opacity-50 flex items-center gap-1 disabled:cursor-not-allowed">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={isRegenerating ? "animate-spin" : ""}><path d="M21.5 2v6h-6M2.13 15.57a9 9 0 1 0 3.84-10.36L2 2"/></svg>
                 {isRegenerating ? "Regenerating..." : "Regenerate"}
               </button>

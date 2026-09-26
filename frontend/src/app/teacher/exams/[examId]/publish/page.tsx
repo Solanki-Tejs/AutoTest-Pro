@@ -3,7 +3,7 @@
 import { useEffect, useState, use } from "react";
 import { useRouter } from "next/navigation";
 import { getStoredToken, getStoredUser } from "@/app/lib/auth";
-import { Exam, getExam, updateExam, approveAnswerBank } from "@/app/lib/exams";
+import { Exam, getExam, publishExam } from "@/app/lib/exams";
 
 export default function PublishStepPage(props: { params: Promise<{ examId: string }> }) {
   const params = use(props.params);
@@ -33,12 +33,14 @@ export default function PublishStepPage(props: { params: Promise<{ examId: strin
         const ex = await getExam(token!, params.examId);
         setExam(ex);
         if (ex.start_time) {
+          const stStr = ex.start_time.endsWith('Z') ? ex.start_time : ex.start_time + 'Z';
           const tzOffset = new Date().getTimezoneOffset() * 60000;
-          setStartTime(new Date(new Date(ex.start_time).getTime() - tzOffset).toISOString().slice(0, 16));
+          setStartTime(new Date(new Date(stStr).getTime() - tzOffset).toISOString().slice(0, 16));
         }
         if (ex.end_time) {
+          const etStr = ex.end_time.endsWith('Z') ? ex.end_time : ex.end_time + 'Z';
           const tzOffset = new Date().getTimezoneOffset() * 60000;
-          setEndTime(new Date(new Date(ex.end_time).getTime() - tzOffset).toISOString().slice(0, 16));
+          setEndTime(new Date(new Date(etStr).getTime() - tzOffset).toISOString().slice(0, 16));
         }
       } catch (err: any) {
         console.error("Failed to load exam data", err);
@@ -61,19 +63,28 @@ export default function PublishStepPage(props: { params: Promise<{ examId: strin
     const end = new Date(endTime).getTime();
     const durationMs = (exam?.duration_minutes || 0) * 60000;
 
+    if (end <= start) {
+      alert("End time must be after start time.");
+      return;
+    }
+
     if (end < start + durationMs) {
       alert(`The time window must be at least ${exam?.duration_minutes} minutes long to accommodate the exam duration.`);
+      return;
+    }
+
+    const current = Date.now();
+    if (start <= current || end <= current) {
+      alert("Start time and End time must be in the future.");
       return;
     }
     
     setPublishing(true);
     try {
-      await updateExam(token, params.examId, {
+      await publishExam(token, params.examId, {
         start_time: new Date(startTime).toISOString(),
         end_time: new Date(endTime).toISOString(),
-        status: "published",
       });
-      await approveAnswerBank(token, params.examId);
       
       const successMsg = isPublished 
         ? (isFinished ? "Exam republished successfully!" : "Publish details updated successfully!")
@@ -134,6 +145,7 @@ export default function PublishStepPage(props: { params: Promise<{ examId: strin
             <input 
               type="datetime-local" 
               required
+              min={new Date(new Date().getTime() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16)}
               className="w-full px-4 py-3 border border-slate-300 rounded-md focus:border-[#2563eb] focus:ring-1 focus:ring-[#2563eb] outline-none transition-all"
               value={startTime} 
               onChange={e => setStartTime(e.target.value)} 
@@ -145,6 +157,7 @@ export default function PublishStepPage(props: { params: Promise<{ examId: strin
             <input 
               type="datetime-local" 
               required
+              min={startTime || new Date(new Date().getTime() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16)}
               className="w-full px-4 py-3 border border-slate-300 rounded-md focus:border-[#2563eb] focus:ring-1 focus:ring-[#2563eb] outline-none transition-all"
               value={endTime} 
               onChange={e => setEndTime(e.target.value)} 

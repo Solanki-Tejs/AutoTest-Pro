@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { getStoredUser, getStoredToken } from "@/app/lib/auth";
 import {
-  Exam, getExam,
+  Exam, getExam, getExamBlueprint, Blueprint,
   QuestionBank, getQuestionBank,
   AnswerBank, getAnswerBank,
   getAnswerGenerationStatus, generateAnswers,
@@ -25,6 +25,7 @@ export default function AnswersPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [isStale, setIsStale] = useState(false);
+  const [isPaperStale, setIsPaperStale] = useState(false);
 
   const [generating, setGenerating] = useState(false);
   const [progress, setProgress] = useState(0);
@@ -46,12 +47,30 @@ export default function AnswersPage() {
 
     async function fetchData() {
       try {
-        const ex = await getExam(token!, examId);
+        const [ex, blp] = await Promise.all([
+          getExam(token!, examId),
+          getExamBlueprint(token!, examId)
+        ]);
         setExam(ex);
 
         // Fetch paper to display questions
         const pb = await getQuestionBank(token!, examId);
         setPaper(pb);
+        
+        if (pb.generation) {
+          const bpVer = pb.generation.blueprint_version || 1;
+          const pbSylls = [...(pb.generation.syllabus_ids || [])].sort();
+          const exSylls = [...(ex.selected_pdf_ids || [])].sort();
+          
+          let paperMarks = 0;
+          pb.question_body?.sections?.forEach(sec => {
+            sec.questions?.forEach(q => paperMarks += (q.mark || 0));
+          });
+          
+          if (bpVer !== blp.version || JSON.stringify(pbSylls) !== JSON.stringify(exSylls) || paperMarks !== ex.total_marks) {
+            setIsPaperStale(true);
+          }
+        }
 
         // Check if generation is ongoing
         const status = await getAnswerGenerationStatus(token!, examId);
@@ -240,6 +259,8 @@ export default function AnswersPage() {
   if (!exam) return <div className="p-8 text-red-600">Exam not found.</div>;
   if (!paper) return <div className="p-8 text-red-600">Please generate the paper first.</div>;
 
+  const isPublished = exam.status === "published";
+
   return (
     <div className="animate-fade-in">
       <div className="flex items-center justify-between mb-6">
@@ -252,15 +273,18 @@ export default function AnswersPage() {
           <div className="flex items-center gap-3">
             <div className="relative group">
               <button
-                className="px-4 py-2 bg-white hover:bg-slate-50 border border-slate-300 text-slate-700 text-[0.9rem] font-bold rounded-md shadow-sm transition-colors flex items-center gap-2"
+                disabled={isPublished}
+                className="px-4 py-2 bg-white hover:bg-slate-50 border border-slate-300 text-slate-700 text-[0.9rem] font-bold rounded-md shadow-sm transition-colors flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-white"
               >
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21.5 2v6h-6M2.13 15.57a9 9 0 1 0 3.84-10.36L2 2" /></svg>
                 Regenerate
               </button>
-              <div className="absolute right-0 mt-2 w-56 bg-white border border-slate-200 rounded-md shadow-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-10 flex flex-col p-1">
-                <button onClick={() => handleRegenerateAll("unedited")} className="px-3 py-2 text-sm text-left hover:bg-slate-50 text-slate-700 font-medium rounded">Regenerate Only Unedited</button>
-                <button onClick={() => handleRegenerateAll("all")} className="px-3 py-2 text-sm text-left hover:bg-slate-50 text-red-600 font-medium rounded">Regenerate All</button>
-              </div>
+              {!isPublished && (
+                <div className="absolute right-0 mt-2 w-56 bg-white border border-slate-200 rounded-md shadow-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-10 flex flex-col p-1">
+                  <button onClick={() => handleRegenerateAll("unedited")} className="px-3 py-2 text-sm text-left hover:bg-slate-50 text-slate-700 font-medium rounded">Regenerate Only Unedited</button>
+                  <button onClick={() => handleRegenerateAll("all")} className="px-3 py-2 text-sm text-left hover:bg-slate-50 text-red-600 font-medium rounded">Regenerate All</button>
+                </div>
+              )}
             </div>
             
             <button
@@ -274,7 +298,36 @@ export default function AnswersPage() {
         )}
       </div>
 
-      {isStale && answerBank && !generating && (
+      {isPublished && answerBank && !generating && (
+        <div className="mb-6 p-4 bg-amber-50 border border-amber-200 rounded-lg flex items-start gap-4 animate-fade-in print:hidden">
+          <div className="text-amber-500 mt-0.5">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" /><line x1="12" y1="9" x2="12" y2="13" /><line x1="12" y1="17" x2="12.01" y2="17" /></svg>
+          </div>
+          <div>
+            <h4 className="text-amber-800 font-bold mb-1">Exam is Published</h4>
+            <p className="text-amber-700 text-[0.9rem]">
+              This exam has been published. The answer key can no longer be regenerated or modified.
+            </p>
+          </div>
+        </div>
+      )}
+
+      {isPaperStale && paper && !isPublished && !generating && (
+        <div className="mb-6 p-4 bg-amber-50 border border-amber-200 rounded-lg flex items-start gap-4 animate-fade-in print:hidden">
+          <div className="text-amber-500 mt-0.5">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" /><line x1="12" y1="9" x2="12" y2="13" /><line x1="12" y1="17" x2="12.01" y2="17" /></svg>
+          </div>
+          <div>
+            <h4 className="text-amber-800 font-bold mb-1">Stale Paper Warning</h4>
+            <p className="text-amber-700 text-[0.9rem]">
+              The blueprint or syllabus selection was modified after this paper was generated.
+              The current paper does not reflect your latest settings. Regenerate the paper to apply changes.
+            </p>
+          </div>
+        </div>
+      )}
+
+      {isStale && !isPaperStale && answerBank && !isPublished && !generating && (
         <div className="mb-6 p-4 bg-amber-50 border border-amber-200 rounded-lg flex items-start gap-4 animate-fade-in">
           <div className="text-amber-500 mt-0.5">
             <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" /><line x1="12" y1="9" x2="12" y2="13" /><line x1="12" y1="17" x2="12.01" y2="17" /></svg>
@@ -338,6 +391,7 @@ export default function AnswersPage() {
                           question={q}
                           answer={ans}
                           isRegenerating={regeneratingIds.has(ans?.answer_id || "")}
+                          disabled={isPublished}
                           onSave={async (updates) => {
                             if (ans) await handleEditSave(ans.answer_id, updates);
                           }}

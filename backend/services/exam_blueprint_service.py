@@ -52,6 +52,10 @@ def create_or_update_blueprint(exam_id: str, blueprint_data: BlueprintCreate) ->
         })
         total_marks += sec.count * sec.marks_each
         
+    if existing and blueprint_data.version is not None:
+        if existing.get("version", 1) != blueprint_data.version:
+            raise ValueError(f"Version conflict: Client version {blueprint_data.version}, Database version {existing.get('version', 1)}")
+
     new_version = existing.get("version", 0) + 1 if existing else 1
     
     doc = {

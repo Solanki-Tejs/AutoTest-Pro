@@ -16,7 +16,7 @@ OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://127.0.0.1:11434").rstrip(
 OLLAMA_API_URL = f"{OLLAMA_BASE_URL}/api/generate"
 OLLAMA_GENERATION_MODEL = os.getenv("OLLAMA_GENERATION_MODEL", "mistral:7b").strip()
 
-def generate_single_answer(question: dict, context: str) -> dict | None:
+def _build_prompt_and_schema_for_answer(question: dict, context: str) -> tuple[str, dict]:
     q_type = question.get("type", "mcq")
     
     json_schema = {
@@ -49,6 +49,40 @@ Respond STRICTLY with JSON matching the required schema.
         options_text = "\n".join([f"{opt.get('id', '')}: {opt.get('text', '')}" for opt in question.get("options", [])])
         prompt += f"\nOptions:\n{options_text}\n"
 
+    return prompt, json_schema
+
+def generate_single_answer_with_gemini(question: dict, context: str) -> dict | None:
+    gemini_api_key = os.getenv("GEMINI_API_KEY", "").strip()
+    gemini_model = os.getenv("GEMINI_MODEL", "gemini-2.5-flash").strip()
+    if not gemini_api_key:
+        raise ValueError("GEMINI_API_KEY is missing or empty")
+
+    prompt, json_schema = _build_prompt_and_schema_for_answer(question, context)
+
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/{gemini_model}:generateContent?key={gemini_api_key}"
+    payload = {
+        "contents": [{"parts": [{"text": prompt}]}],
+        "generationConfig": {
+            "temperature": 0.2,
+            "responseMimeType": "application/json",
+            "responseSchema": json_schema
+        }
+    }
+
+    req = urllib.request.Request(
+        url,
+        data=json.dumps(payload).encode('utf-8'),
+        headers={'Content-Type': 'application/json'},
+        method='POST'
+    )
+    with urllib.request.urlopen(req, timeout=120) as response:
+        result = json.loads(response.read().decode('utf-8'))
+        content = result.get("candidates", [])[0].get("content", {}).get("parts", [])[0].get("text", "{}")
+        return json.loads(content)
+
+def generate_single_answer_with_ollama(question: dict, context: str) -> dict | None:
+    prompt, json_schema = _build_prompt_and_schema_for_answer(question, context)
+
     payload = {
         "model": OLLAMA_GENERATION_MODEL,
         "prompt": prompt,
@@ -59,19 +93,27 @@ Respond STRICTLY with JSON matching the required schema.
         }
     }
     
+    req = urllib.request.Request(
+        OLLAMA_API_URL, 
+        data=json.dumps(payload).encode('utf-8'),
+        headers={'Content-Type': 'application/json'},
+        method='POST'
+    )
+    with urllib.request.urlopen(req, timeout=120) as response:
+        result = json.loads(response.read().decode('utf-8'))
+        return json.loads(result.get("response", "{}"))
+
+def generate_single_answer(question: dict, context: str) -> dict | None:
     try:
-        req = urllib.request.Request(
-            OLLAMA_API_URL, 
-            data=json.dumps(payload).encode('utf-8'),
-            headers={'Content-Type': 'application/json'},
-            method='POST'
-        )
-        with urllib.request.urlopen(req, timeout=120) as response:
-            result = json.loads(response.read().decode('utf-8'))
-            return json.loads(result.get("response", "{}"))
+        print("[TIMING] Attempting to generate answer with Google AI Studio (Gemini)...")
+        return generate_single_answer_with_gemini(question, context)
     except Exception as e:
-        print(f"Error calling Ollama for answer: {e}")
-        return None
+        print(f"[TIMING] Gemini generation failed ({e}). Falling back to local Ollama model...")
+        try:
+            return generate_single_answer_with_ollama(question, context)
+        except Exception as e2:
+            print(f"Error calling Ollama for answer: {e2}")
+            return None
 
 def generate_answers_job(exam_id: str, db: Session, mode: str = "all"):
     try:
@@ -108,7 +150,7 @@ def generate_answers_job(exam_id: str, db: Session, mode: str = "all"):
             
             if mode == "unedited" and q_id in existing_answers:
                 old_ans = existing_answers[q_id]
-                if old_ans.get("is_edited"):
+                if old_ans.get("is_edited") or not old_ans.get("is_stale", False):
                     answers.append(old_ans)
                     generated += 1
                     

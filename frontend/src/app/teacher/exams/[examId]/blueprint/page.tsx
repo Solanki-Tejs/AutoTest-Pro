@@ -16,9 +16,11 @@ export default function ExamBlueprintPage() {
   const [exam, setExam] = useState<Exam | null>(null);
   const [syllabuses, setSyllabuses] = useState<SyllabusAvailable[]>([]);
   const [sections, setSections] = useState<Section[]>([]);
+  const [version, setVersion] = useState<number>(1);
   const [loading, setLoading] = useState(true);
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [error, setError] = useState("");
+  const [dbBlueprintMarks, setDbBlueprintMarks] = useState<number | null>(null);
 
   useEffect(() => {
     const u = getStoredUser();
@@ -41,6 +43,11 @@ export default function ExamBlueprintPage() {
         ]);
         setExam(exm);
         setSections(blp.sections || []);
+        setVersion(blp.version || 1);
+        
+        const initialMarks = (blp.sections || []).reduce((acc: number, sec: any) => acc + ((parseInt(String(sec.count)) || 0) * (parseInt(String(sec.marks_each)) || 0)), 0);
+        setDbBlueprintMarks(initialMarks);
+        
         setSyllabuses(sylls.filter(s => exm.selected_pdf_ids.includes(s.id)));
       } catch (err: any) {
         setError(err.message || "Failed to load blueprint data");
@@ -51,25 +58,40 @@ export default function ExamBlueprintPage() {
     loadData();
   }, [token, examId]);
 
-  const configuredMarks = sections.reduce((acc, sec) => acc + (sec.count * sec.marks_each), 0);
+  const configuredMarks = sections.reduce((acc, sec) => acc + ((parseInt(String(sec.count)) || 0) * (parseInt(String(sec.marks_each)) || 0)), 0);
   const examTotal = exam?.total_marks || 0;
   const remainingMarks = examTotal - configuredMarks;
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const debouncedSave = useCallback(
-    debounce(async (secs: Section[], currentMarks: number, t: string) => {
-      if (currentMarks !== examTotal) {
+    debounce(async (secs: Section[], currentMarks: number, t: string, v: number) => {
+      const hasInvalidNumeric = secs.some(sec => {
+        const c = parseInt(String(sec.count));
+        const m = parseInt(String(sec.marks_each));
+        return isNaN(c) || c <= 0 || isNaN(m) || m <= 0;
+      });
+      if (hasInvalidNumeric || currentMarks !== examTotal) {
         setSaveStatus("idle");
+        if (hasInvalidNumeric) {
+          setError("Count and Marks/Q must be a positive number.");
+        } else {
+          // Silently wait for the teacher to finish math, don't nag them
+          setError("");
+        }
         return; // don't auto-save invalid blueprint
       }
       setSaveStatus("saving");
       try {
-        await saveExamBlueprint(t, examId, secs);
+        const newBlp = await saveExamBlueprint(t, examId, secs, v);
+        setVersion(newBlp.version);
+        setDbBlueprintMarks(currentMarks);
         setSaveStatus("saved");
+        setError(""); // Clear error on success
         setTimeout(() => setSaveStatus("idle"), 2000);
       } catch (err: any) {
         console.error(err);
         setSaveStatus("error");
+        setError(err.message || "Failed to save");
       }
     }, 1000),
     [examId, examTotal]
@@ -77,9 +99,9 @@ export default function ExamBlueprintPage() {
 
   const triggerUpdate = (newSections: Section[]) => {
     setSections(newSections);
-    const newMarks = newSections.reduce((acc, sec) => acc + (sec.count * sec.marks_each), 0);
+    const newMarks = newSections.reduce((acc, sec) => acc + ((parseInt(String(sec.count)) || 0) * (parseInt(String(sec.marks_each)) || 0)), 0);
     if (token) {
-      debouncedSave(newSections, newMarks, token);
+      debouncedSave(newSections, newMarks, token, version);
     }
   };
 
@@ -110,7 +132,8 @@ export default function ExamBlueprintPage() {
     
     setSaveStatus("saving");
     try {
-      await saveExamBlueprint(token, examId, sections);
+      const newBlp = await saveExamBlueprint(token, examId, sections, version);
+      setVersion(newBlp.version);
       const { generatePaper } = await import("@/app/lib/exams");
       await generatePaper(token, examId);
       router.push(`/teacher/exams/${examId}/paper`);
@@ -120,6 +143,8 @@ export default function ExamBlueprintPage() {
     }
   };
 
+  const isPublished = exam?.status === "published";
+
   if (loading) {
     return <div className="min-h-screen bg-slate-50 flex items-center justify-center">Loading...</div>;
   }
@@ -128,6 +153,14 @@ export default function ExamBlueprintPage() {
 
   return (
     <div className="animate-fade-in">
+      {dbBlueprintMarks !== null && dbBlueprintMarks > 0 && dbBlueprintMarks !== examTotal && (
+        <div className="mb-6 p-4 bg-yellow-50 text-yellow-800 border border-yellow-200 rounded-md font-semibold text-[0.9rem] flex items-start gap-2">
+          <span>⚠️</span>
+          <div>
+            Warning: The exam's total marks have been updated to {examTotal}, but your last saved blueprint was configured for {dbBlueprintMarks}. Please adjust your sections to match the new total marks before you can generate the paper.
+          </div>
+        </div>
+      )}
       <div className="flex items-center justify-between mb-6">
         <div>
           <h2 className="text-2xl font-bold text-slate-900 tracking-tight">Blueprint Config</h2>
@@ -150,6 +183,12 @@ export default function ExamBlueprintPage() {
         </div>
       </div>
 
+      {isPublished && (
+        <div className="mb-6 p-4 bg-amber-50 text-amber-800 border border-amber-200 rounded-md font-semibold text-[0.9rem]">
+          This exam is published. The blueprint cannot be modified.
+        </div>
+      )}
+
       <div className="flex items-start gap-8">
         
         {/* ── Main Content ── */}
@@ -158,7 +197,8 @@ export default function ExamBlueprintPage() {
             <h2 className="text-[1.2rem] font-bold text-slate-900">Exam Sections</h2>
             <button 
               onClick={addSection}
-              className="flex items-center gap-1.5 px-4 py-2 border border-slate-300 hover:border-[#2563eb] text-slate-700 hover:text-[#2563eb] bg-white rounded-md text-[0.85rem] font-semibold transition-colors"
+              disabled={isPublished}
+              className="flex items-center gap-1.5 px-4 py-2 border border-slate-300 hover:border-[#2563eb] text-slate-700 hover:text-[#2563eb] bg-white rounded-md text-[0.85rem] font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
               Add Section
@@ -172,7 +212,7 @@ export default function ExamBlueprintPage() {
               <div className="text-4xl mb-4">📑</div>
               <h3 className="text-[1.1rem] font-bold text-slate-900 mb-2">No Sections Yet</h3>
               <p className="text-slate-500 text-[0.9rem] mb-6">Add a section to define the structure of your exam.</p>
-              <button onClick={addSection} className="text-[#2563eb] font-semibold hover:underline">Add First Section</button>
+              <button onClick={addSection} disabled={isPublished} className="text-[#2563eb] font-semibold hover:underline disabled:opacity-50 disabled:cursor-not-allowed">Add First Section</button>
             </div>
           ) : (
             <div className="space-y-5">
@@ -180,7 +220,8 @@ export default function ExamBlueprintPage() {
                 <div key={index} className="bg-white border border-slate-200 rounded-xl p-6 shadow-sm relative group animate-fade-up" style={{ animationDelay: `${index * 0.05}s` }}>
                   <button 
                     onClick={() => removeSection(index)}
-                    className="absolute top-4 right-4 text-slate-400 hover:text-red-500 p-1.5 bg-slate-50 hover:bg-red-50 rounded-md transition-colors"
+                    disabled={isPublished}
+                    className="absolute top-4 right-4 text-slate-400 hover:text-red-500 p-1.5 bg-slate-50 hover:bg-red-50 rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                     title="Delete Section"
                   >
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6" /><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6" /><path d="M10 11v6M14 11v6" /></svg>
@@ -192,16 +233,18 @@ export default function ExamBlueprintPage() {
                       <input 
                         type="text" 
                         value={section.section}
+                        disabled={isPublished}
                         onChange={e => updateSection(index, "section", e.target.value)}
-                        className="w-full px-3 py-2 border border-slate-300 rounded-md focus:border-[#2563eb] focus:ring-1 focus:ring-[#2563eb] outline-none text-[0.9rem]"
+                        className="w-full px-3 py-2 border border-slate-300 rounded-md focus:border-[#2563eb] focus:ring-1 focus:ring-[#2563eb] outline-none text-[0.9rem] disabled:bg-slate-100 disabled:text-slate-500"
                       />
                     </div>
                     <div className="col-span-6 md:col-span-3">
                       <label className="block text-[0.8rem] font-bold text-slate-700 mb-1.5">Question Type</label>
                       <select 
                         value={section.type}
+                        disabled={isPublished}
                         onChange={e => updateSection(index, "type", e.target.value)}
-                        className="w-full px-3 py-2 border border-slate-300 rounded-md focus:border-[#2563eb] focus:ring-1 focus:ring-[#2563eb] outline-none text-[0.9rem]"
+                        className="w-full px-3 py-2 border border-slate-300 rounded-md focus:border-[#2563eb] focus:ring-1 focus:ring-[#2563eb] outline-none text-[0.9rem] disabled:bg-slate-100 disabled:text-slate-500"
                       >
                         <option value="mcq">MCQ</option>
                         <option value="short">Short Answer</option>
@@ -214,8 +257,9 @@ export default function ExamBlueprintPage() {
                       <input 
                         type="number" min="1"
                         value={section.count}
-                        onChange={e => updateSection(index, "count", parseInt(e.target.value) || 0)}
-                        className="w-full px-3 py-2 border border-slate-300 rounded-md focus:border-[#2563eb] focus:ring-1 focus:ring-[#2563eb] outline-none text-[0.9rem]"
+                        disabled={isPublished}
+                        onChange={e => updateSection(index, "count", e.target.value)}
+                        className="w-full px-3 py-2 border border-slate-300 rounded-md focus:border-[#2563eb] focus:ring-1 focus:ring-[#2563eb] outline-none text-[0.9rem] disabled:bg-slate-100 disabled:text-slate-500"
                       />
                     </div>
                     <div className="col-span-3 md:col-span-2">
@@ -223,13 +267,14 @@ export default function ExamBlueprintPage() {
                       <input 
                         type="number" min="1"
                         value={section.marks_each}
-                        onChange={e => updateSection(index, "marks_each", parseInt(e.target.value) || 0)}
-                        className="w-full px-3 py-2 border border-slate-300 rounded-md focus:border-[#2563eb] focus:ring-1 focus:ring-[#2563eb] outline-none text-[0.9rem]"
+                        disabled={isPublished}
+                        onChange={e => updateSection(index, "marks_each", e.target.value)}
+                        className="w-full px-3 py-2 border border-slate-300 rounded-md focus:border-[#2563eb] focus:ring-1 focus:ring-[#2563eb] outline-none text-[0.9rem] disabled:bg-slate-100 disabled:text-slate-500"
                       />
                     </div>
                     <div className="col-span-12 md:col-span-1 pb-2">
                       <div className="text-[1.1rem] font-bold text-slate-900 text-right">
-                        = {section.count * section.marks_each}
+                        = {(parseInt(String(section.count)) || 0) * (parseInt(String(section.marks_each)) || 0)}
                       </div>
                     </div>
                   </div>
@@ -247,8 +292,8 @@ export default function ExamBlueprintPage() {
             </button>
             <button 
               onClick={handleGenerate} 
-              disabled={saveStatus === "saving" || remainingMarks !== 0}
-              className="px-6 py-2.5 bg-[#2563eb] hover:bg-[#1d4ed8] text-white text-[0.95rem] font-bold rounded-md shadow-sm transition-colors disabled:opacity-50"
+              disabled={isPublished || saveStatus === "saving" || remainingMarks !== 0}
+              className="px-6 py-2.5 bg-[#2563eb] hover:bg-[#1d4ed8] text-white text-[0.95rem] font-bold rounded-md shadow-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
               Generate Paper &rarr;
             </button>

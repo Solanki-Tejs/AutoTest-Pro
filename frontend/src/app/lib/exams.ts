@@ -36,8 +36,8 @@ export interface Section {
   section_id?: string;
   section: string;
   type: string;
-  count: number;
-  marks_each: number;
+  count: number | string;
+  marks_each: number | string;
   order?: number;
   total_marks?: number;
 }
@@ -45,6 +45,7 @@ export interface Section {
 export interface Blueprint {
   exam_id: string;
   total_marks: number;
+  version?: number;
   sections: Section[];
 }
 
@@ -109,6 +110,26 @@ export async function updateExam(
   return res.json();
 }
 
+export async function publishExam(
+  token: string,
+  examId: string,
+  data: {
+    start_time: string;
+    end_time: string;
+  }
+) {
+  const res = await fetch(`${BASE_URL}/exams/${examId}/publish`, {
+    method: "POST",
+    headers: authHeaders(token),
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) {
+    const error = await res.json();
+    throw new Error(error.detail || "Failed to publish exam");
+  }
+  return res.json();
+}
+
 export async function getExam(token: string, examId: string): Promise<Exam> {
   const res = await fetch(`${BASE_URL}/exams/${examId}`, {
     headers: authHeaders(token),
@@ -167,12 +188,13 @@ export async function getExamBlueprint(token: string, examId: string): Promise<B
 export async function saveExamBlueprint(
   token: string,
   examId: string,
-  sections: Section[]
+  sections: Section[],
+  version?: number
 ): Promise<Blueprint> {
   const res = await fetch(`${BASE_URL}/exams/${examId}/blueprint`, {
     method: "POST",
     headers: authHeaders(token),
-    body: JSON.stringify({ sections }),
+    body: JSON.stringify({ version, sections }),
   });
   if (!res.ok) {
     const error = await res.json();

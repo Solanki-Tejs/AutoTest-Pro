@@ -8,13 +8,15 @@ export default function EditableQuestionCard({
   onSave,
   onRegenerate,
   onDelete,
-  isRegenerating = false
+  isRegenerating = false,
+  disabled = false
 }: {
   question: Question;
   onSave: (updates: Partial<Question>) => Promise<void>;
   onRegenerate: () => void;
   onDelete: () => void;
   isRegenerating?: boolean;
+  disabled?: boolean;
 }) {
   const [isEditing, setIsEditing] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -141,14 +143,16 @@ export default function EditableQuestionCard({
         </div>
       </div>
 
-      <div className="opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-4 mt-2 ml-9">
-        <button onClick={() => setIsEditing(true)} className="text-xs font-semibold text-slate-400 hover:text-blue-600 transition-colors uppercase tracking-wider">
-          Edit
-        </button>
-        <button onClick={() => { if(confirm("Regenerate this question?")) onRegenerate(); }} className="text-xs font-semibold text-slate-400 hover:text-indigo-600 transition-colors uppercase tracking-wider">
-          Regenerate
-        </button>
-      </div>
+      {!disabled && (
+        <div className="opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-4 mt-2 ml-9">
+          <button onClick={() => setIsEditing(true)} className="text-xs font-semibold text-slate-400 hover:text-blue-600 transition-colors uppercase tracking-wider">
+            Edit
+          </button>
+          <button onClick={() => { if(confirm("Regenerate this question?")) onRegenerate(); }} className="text-xs font-semibold text-slate-400 hover:text-indigo-600 transition-colors uppercase tracking-wider">
+            Regenerate
+          </button>
+        </div>
+      )}
     </div>
   );
 }
