@@ -48,7 +48,7 @@ def validate_enrollment_and_schedule(student_id: int, exam_id: str, db: Session)
     if not exam:
         raise ValueError("Student is not enrolled in this exam's class")
         
-    if exam["start_time"] and exam["enrollment_date"] > exam["start_time"]:
+    if exam["start_time"] and exam["enrollment_date"].replace(tzinfo=timezone.utc) > exam["start_time"].replace(tzinfo=timezone.utc):
         raise ValueError("You cannot take this exam because you enrolled in the class after the exam started.")
         
     if exam["status"] != "published":
@@ -64,6 +64,77 @@ def validate_enrollment_and_schedule(student_id: int, exam_id: str, db: Session)
         
     return dict(exam)
 
+def get_student_exams(student_id: int, db: Session) -> List[Dict[str, Any]]:
+    ensure_tables(db)
+    query = text("""
+        SELECT e.*, c.name as class_name,
+            (SELECT json_build_object(
+                'id', ea.id,
+                'status', CASE WHEN ea.completed_at IS NOT NULL THEN 'submitted' ELSE 'in_progress' END,
+                'started_at', ea.started_at,
+                'completed_at', ea.completed_at,
+                'deadline', ea.deadline
+            ) FROM exam_attempts ea WHERE ea.exam_id = e.id AND ea.student_id = :student_id LIMIT 1) as attempt
+        FROM exams e
+        JOIN class_enrollments ce ON e.class_id = ce.class_id
+        JOIN classes c ON e.class_id = c.id
+        WHERE ce.student_id = :student_id AND ce.status = 'approved' AND e.status = 'published'
+        ORDER BY e.start_time DESC
+    """)
+    result = db.execute(query, {"student_id": student_id})
+    exams = []
+    for row in result.mappings():
+        exam_dict = dict(row)
+        exams.append(exam_dict)
+    return exams
+
+def get_student_attempt(student_id: int, exam_id: str, db: Session) -> dict:
+    ensure_tables(db)
+    query = text("SELECT * FROM exam_attempts WHERE exam_id = :exam_id AND student_id = :student_id")
+    result = db.execute(query, {"exam_id": exam_id, "student_id": student_id})
+    attempt = result.mappings().first()
+    
+    if not attempt:
+        raise ValueError("Exam attempt not found")
+        
+    attempt_dict = dict(attempt)
+    
+    # Fetch saved answers from Mongo
+    try:
+        from databases.mongo import get_mongo_db
+        mongo_db = get_mongo_db()
+        saved_doc = mongo_db.exam_attempt_answers.find_one({"attempt_id": str(attempt["id"])})
+        if saved_doc and "answers" in saved_doc:
+            attempt_dict["saved_answers"] = saved_doc["answers"]
+    except Exception:
+        pass
+        
+    return attempt_dict
+
+def save_attempt_answers(student_id: int, exam_id: str, attempt_id: str, answers: List[Dict[str, Any]], db: Session) -> dict:
+    attempt = get_student_attempt(student_id, exam_id, db)
+    
+    if str(attempt["id"]) != attempt_id:
+        raise ValueError("Invalid attempt ID")
+        
+    if attempt["completed_at"]:
+        raise ValueError("Exam already submitted")
+        
+    now = datetime.now(timezone.utc)
+    if now > attempt["deadline"]:
+        raise ValueError("Exam deadline has passed")
+        
+    # Save answers to Mongo
+    from databases.mongo import get_mongo_db
+    mongo_db = get_mongo_db()
+    
+    mongo_db.exam_attempt_answers.update_one(
+        {"attempt_id": attempt_id, "student_id": student_id, "exam_id": exam_id},
+        {"$set": {"answers": answers, "updated_at": now.isoformat()}},
+        upsert=True
+    )
+    
+    return {"status": "saved", "updated_at": now.isoformat()}
 
 def start_exam_attempt(student_id: int, exam_id: str, db: Session) -> dict:
     exam = validate_enrollment_and_schedule(student_id, exam_id, db)
@@ -187,7 +258,7 @@ def submit_exam_attempt(student_id: int, exam_id: str, answers: List[Dict[str, A
     submission_data = {
         "exam_id": exam_id,
         "student_id": student_id,
-        "attempt_id": attempt["id"],
+        "attempt_id": str(attempt["id"]),
         "answers": answers,
         "submitted_at": now.isoformat()
     }

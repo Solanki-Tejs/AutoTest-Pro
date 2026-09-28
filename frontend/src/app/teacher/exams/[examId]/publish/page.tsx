@@ -33,12 +33,12 @@ export default function PublishStepPage(props: { params: Promise<{ examId: strin
         const ex = await getExam(token!, params.examId);
         setExam(ex);
         if (ex.start_time) {
-          const stStr = ex.start_time.endsWith('Z') ? ex.start_time : ex.start_time + 'Z';
+          const stStr = ex.start_time.match(/(Z|[+-]\d{2}(:\d{2})?)$/) ? ex.start_time : ex.start_time + 'Z';
           const tzOffset = new Date().getTimezoneOffset() * 60000;
           setStartTime(new Date(new Date(stStr).getTime() - tzOffset).toISOString().slice(0, 16));
         }
         if (ex.end_time) {
-          const etStr = ex.end_time.endsWith('Z') ? ex.end_time : ex.end_time + 'Z';
+          const etStr = ex.end_time.match(/(Z|[+-]\d{2}(:\d{2})?)$/) ? ex.end_time : ex.end_time + 'Z';
           const tzOffset = new Date().getTimezoneOffset() * 60000;
           setEndTime(new Date(new Date(etStr).getTime() - tzOffset).toISOString().slice(0, 16));
         }

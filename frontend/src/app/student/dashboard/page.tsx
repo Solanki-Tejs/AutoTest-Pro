@@ -10,7 +10,7 @@ import {
   Membership,
 } from "@/app/lib/classes";
 import { fetchSyllabusList, downloadSyllabus, viewSyllabus, SyllabusItem } from "@/app/lib/syllabus";
-import { Exam, getStudentExams } from "@/app/lib/exams";
+import { StudentExam, getAllStudentExams } from "@/app/lib/student_exams";
 import { useRouter } from "next/navigation";
 
 type Tab = "join" | "my-classes" | "profile";
@@ -424,7 +424,7 @@ function StudentClassDetailView({ m, onBack, token }: { m: Membership; onBack: (
   const [syllabusList, setSyllabusList] = useState<SyllabusItem[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const [examList, setExamList] = useState<Exam[]>([]);
+  const [examList, setExamList] = useState<StudentExam[]>([]);
   const [examsLoading, setExamsLoading] = useState(true);
 
   const loadSyllabus = useCallback(() => {
@@ -437,8 +437,8 @@ function StudentClassDetailView({ m, onBack, token }: { m: Membership; onBack: (
 
   const loadExams = useCallback(() => {
     setExamsLoading(true);
-    getStudentExams(token, m.class_id)
-      .then(setExamList)
+    getAllStudentExams(token)
+      .then((data) => setExamList(data.filter(e => e.class_id === m.class_id)))
       .catch(() => {})
       .finally(() => setExamsLoading(false));
   }, [token, m.class_id]);
@@ -602,20 +602,26 @@ function StudentClassDetailView({ m, onBack, token }: { m: Membership; onBack: (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {examList.map((exam) => {
                 const now = new Date();
-                const stStr = exam.start_time ? (exam.start_time.endsWith('Z') ? exam.start_time : exam.start_time + 'Z') : null;
-                const etStr = exam.end_time ? (exam.end_time.endsWith('Z') ? exam.end_time : exam.end_time + 'Z') : null;
+                const stStr = exam.start_time ? (exam.start_time.match(/(Z|[+-]\d{2}(:\d{2})?)$/) ? exam.start_time : exam.start_time + 'Z') : null;
+                const etStr = exam.end_time ? (exam.end_time.match(/(Z|[+-]\d{2}(:\d{2})?)$/) ? exam.end_time : exam.end_time + 'Z') : null;
                 const startTime = stStr ? new Date(stStr) : null;
                 const endTime = etStr ? new Date(etStr) : null;
                 
-                let statusInfo = { label: "Available", color: "bg-blue-100 text-blue-700", actionText: "Take Exam", actionDisabled: true };
+                let statusInfo = { label: "Available", color: "bg-blue-100 text-blue-700", actionText: "Take Exam", actionDisabled: true, href: `/student/exams/${exam.id}` };
                 
-                if (startTime && endTime) {
+                if (exam.attempt) {
+                   if (exam.attempt.status === 'submitted') {
+                     statusInfo = { label: "Submitted", color: "bg-green-100 text-green-700", actionText: "View Result", actionDisabled: false, href: `/student/exams/${exam.id}/submitted` };
+                   } else {
+                     statusInfo = { label: "In Progress", color: "bg-amber-100 text-amber-700", actionText: "Resume Exam", actionDisabled: false, href: `/student/exams/${exam.id}/attempt` };
+                   }
+                } else if (startTime && endTime) {
                   if (now < startTime) {
-                    statusInfo = { label: "Upcoming", color: "bg-indigo-100 text-indigo-700", actionText: "Starts soon", actionDisabled: true };
+                    statusInfo = { label: "Upcoming", color: "bg-indigo-100 text-indigo-700", actionText: "Starts soon", actionDisabled: true, href: "#" };
                   } else if (now > endTime) {
-                    statusInfo = { label: "Ended", color: "bg-slate-100 text-slate-600", actionText: "Missed", actionDisabled: true };
+                    statusInfo = { label: "Ended", color: "bg-slate-100 text-slate-600", actionText: "Missed", actionDisabled: true, href: "#" };
                   } else {
-                    statusInfo = { label: "Active", color: "bg-green-100 text-green-700", actionText: "Take Exam", actionDisabled: false }; // Action still disabled functionally for now
+                    statusInfo = { label: "Active", color: "bg-blue-100 text-blue-700", actionText: "Take Exam", actionDisabled: false, href: `/student/exams/${exam.id}` };
                   }
                 }
 
@@ -647,16 +653,16 @@ function StudentClassDetailView({ m, onBack, token }: { m: Membership; onBack: (
                       </div>
                     )}
                     
-                    <button 
-                      disabled={true} 
-                      className={`w-full py-2.5 rounded-lg font-bold text-[0.9rem] transition-colors mt-auto ${
-                        statusInfo.actionDisabled === false // Currently always false as we haven't implemented it
+                    <a 
+                      href={statusInfo.href}
+                      className={`w-full py-2.5 rounded-lg font-bold text-[0.9rem] transition-colors mt-auto text-center block ${
+                        statusInfo.actionDisabled === false
                           ? "bg-[#2563eb] hover:bg-[#1d4ed8] text-white cursor-pointer"
-                          : "bg-slate-100 text-slate-400 cursor-not-allowed border border-slate-200"
+                          : "bg-slate-100 text-slate-400 pointer-events-none border border-slate-200"
                       }`}
                     >
-                      {statusInfo.actionText} (Coming Soon)
-                    </button>
+                      {statusInfo.actionText}
+                    </a>
                   </div>
                 );
               })}
