@@ -37,7 +37,7 @@ export default function ExamInstructionsPage() {
             router.replace(`/student/exams/${found.id}/attempt`);
             return;
           }
-          if (found.attempt?.status === "submitted") {
+          if (found.attempt?.status === "submitted" || found.attempt?.status === "evaluated") {
             router.replace(`/student/exams/${found.id}/submitted`);
             return;
           }
@@ -163,7 +163,7 @@ export default function ExamInstructionsPage() {
             </ul>
 
             <div className="border-t border-slate-100 pt-8 flex flex-col items-center justify-center">
-              {exam.attempt?.status === "submitted" ? (
+              {(exam.attempt?.status === "submitted" || exam.attempt?.status === "evaluated") ? (
                 <div className="text-center p-4 bg-green-50 border border-green-200 rounded-lg w-full">
                   <div className="font-bold text-green-800 mb-1">Exam Submitted</div>
                   <div className="text-green-700 text-sm">You have already completed this exam.</div>

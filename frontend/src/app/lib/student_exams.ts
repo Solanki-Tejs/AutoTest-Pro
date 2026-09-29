@@ -102,3 +102,15 @@ export async function submitExam(token: string, examId: string, answers: any[]) 
   }
   return res.json();
 }
+
+export async function getAttemptResult(token: string, examId: string, attemptId: string) {
+  const res = await fetch(`${BASE_URL}/student/exams/${examId}/attempts/${attemptId}/result`, {
+    headers: authHeaders(token),
+    cache: "no-store",
+  });
+  if (!res.ok) {
+    const error = await res.json();
+    throw new Error(error.detail || "Failed to fetch attempt result");
+  }
+  return res.json();
+}

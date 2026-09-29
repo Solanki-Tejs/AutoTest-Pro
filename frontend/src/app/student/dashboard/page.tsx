@@ -610,7 +610,7 @@ function StudentClassDetailView({ m, onBack, token }: { m: Membership; onBack: (
                 let statusInfo = { label: "Available", color: "bg-blue-100 text-blue-700", actionText: "Take Exam", actionDisabled: true, href: `/student/exams/${exam.id}` };
                 
                 if (exam.attempt) {
-                   if (exam.attempt.status === 'submitted') {
+                   if (exam.attempt.status === 'submitted' || exam.attempt.status === 'evaluated') {
                      statusInfo = { label: "Submitted", color: "bg-green-100 text-green-700", actionText: "View Result", actionDisabled: false, href: `/student/exams/${exam.id}/submitted` };
                    } else {
                      statusInfo = { label: "In Progress", color: "bg-amber-100 text-amber-700", actionText: "Resume Exam", actionDisabled: false, href: `/student/exams/${exam.id}/attempt` };

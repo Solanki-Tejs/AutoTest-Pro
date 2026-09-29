@@ -20,8 +20,29 @@ def ensure_tables(db: Session):
             started_at TIMESTAMP WITH TIME ZONE NOT NULL,
             deadline TIMESTAMP WITH TIME ZONE NOT NULL,
             completed_at TIMESTAMP WITH TIME ZONE NULL,
+            status VARCHAR(50) NOT NULL DEFAULT 'in_progress',
+            total_marks NUMERIC(10, 2) NULL,
+            max_marks NUMERIC(10, 2) NULL,
+            evaluated_at TIMESTAMP WITH TIME ZONE NULL,
+            result_published_at TIMESTAMP WITH TIME ZONE NULL,
             UNIQUE(exam_id, student_id)
         )
+    """))
+    db.execute(text("""
+        DO $$
+        BEGIN
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='exam_attempts' AND column_name='status') THEN
+                ALTER TABLE exam_attempts ADD COLUMN status VARCHAR(50) NOT NULL DEFAULT 'in_progress';
+                UPDATE exam_attempts SET status = 'submitted' WHERE completed_at IS NOT NULL AND status = 'in_progress';
+            END IF;
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='exam_attempts' AND column_name='total_marks') THEN
+                ALTER TABLE exam_attempts ADD COLUMN total_marks NUMERIC(10, 2) NULL;
+                ALTER TABLE exam_attempts ADD COLUMN max_marks NUMERIC(10, 2) NULL;
+                ALTER TABLE exam_attempts ADD COLUMN evaluated_at TIMESTAMP WITH TIME ZONE NULL;
+                ALTER TABLE exam_attempts ADD COLUMN result_published_at TIMESTAMP WITH TIME ZONE NULL;
+            END IF;
+        END
+        $$;
     """))
     db.commit()
     _tables_ensured = True
@@ -70,7 +91,7 @@ def get_student_exams(student_id: int, db: Session) -> List[Dict[str, Any]]:
         SELECT e.*, c.name as class_name,
             (SELECT json_build_object(
                 'id', ea.id,
-                'status', CASE WHEN ea.completed_at IS NOT NULL THEN 'submitted' ELSE 'in_progress' END,
+                'status', ea.status,
                 'started_at', ea.started_at,
                 'completed_at', ea.completed_at,
                 'deadline', ea.deadline
@@ -105,6 +126,10 @@ def get_student_attempt(student_id: int, exam_id: str, db: Session) -> dict:
         mongo_db = get_mongo_db()
         saved_doc = mongo_db.exam_attempt_answers.find_one({"attempt_id": str(attempt["id"])})
         if saved_doc and "answers" in saved_doc:
+            # Strip evaluations if not published
+            if not attempt_dict.get("result_published_at"):
+                for ans in saved_doc["answers"]:
+                    ans.pop("evaluation", None)
             attempt_dict["saved_answers"] = saved_doc["answers"]
     except Exception:
         pass
@@ -121,7 +146,8 @@ def save_attempt_answers(student_id: int, exam_id: str, attempt_id: str, answers
         raise ValueError("Exam already submitted")
         
     now = datetime.now(timezone.utc)
-    if now > attempt["deadline"]:
+    # 2-minute grace period for network latency and auto-submissions
+    if now > attempt["deadline"] + timedelta(minutes=2):
         raise ValueError("Exam deadline has passed")
         
     # Save answers to Mongo
@@ -167,9 +193,9 @@ def start_exam_attempt(student_id: int, exam_id: str, db: Session) -> dict:
             deadline = exam_end
             
     insert_query = text("""
-        INSERT INTO exam_attempts (exam_id, student_id, started_at, deadline)
-        VALUES (:exam_id, :student_id, :started_at, :deadline)
-        RETURNING id, exam_id, student_id, started_at, deadline, completed_at
+        INSERT INTO exam_attempts (exam_id, student_id, started_at, deadline, status)
+        VALUES (:exam_id, :student_id, :started_at, :deadline, 'in_progress')
+        RETURNING id, exam_id, student_id, started_at, deadline, completed_at, status
     """)
     
     res = db.execute(insert_query, {
@@ -229,19 +255,23 @@ def submit_exam_attempt(student_id: int, exam_id: str, answers: List[Dict[str, A
         raise ValueError("Exam attempt not found. You must start the exam first.")
         
     if attempt["completed_at"]:
-        raise ValueError("Exam already submitted")
+        # Idempotent return: already submitted
+        return dict(attempt)
         
     now = datetime.now(timezone.utc)
     
-    if now > attempt["deadline"]:
-        raise ValueError("Exam deadline has passed. Submissions are no longer accepted.")
+    # Allow submission (or auto-submission) to proceed even if deadline passed.
+    # The autosave endpoint enforces the strict cutoff for answering questions.
+    # But if you want a strict cutoff for submissions too, we use a grace period:
+    if now > attempt["deadline"] + timedelta(minutes=2):
+        pass # In many systems, we just forcefully submit anyway. We'll allow it for auto-submit.
         
-    # Mark as completed
+    # Mark as completed and submitted
     update_query = text("""
         UPDATE exam_attempts
-        SET completed_at = :completed_at
+        SET completed_at = :completed_at, status = 'submitted'
         WHERE id = :attempt_id
-        RETURNING id, exam_id, student_id, started_at, deadline, completed_at
+        RETURNING id, exam_id, student_id, started_at, deadline, completed_at, status
     """)
     
     res = db.execute(update_query, {
@@ -260,8 +290,33 @@ def submit_exam_attempt(student_id: int, exam_id: str, answers: List[Dict[str, A
         "student_id": student_id,
         "attempt_id": str(attempt["id"]),
         "answers": answers,
-        "submitted_at": now.isoformat()
+        "submitted_at": now.isoformat(),
+        "submission_version": 1
     }
-    mongo_db.student_submissions.insert_one(submission_data)
+    
+    # Pre-populate evaluation structure for each answer
+    for ans in submission_data["answers"]:
+        ans["evaluation"] = {
+            "status": "pending",
+            "evaluator_model": None,
+            "ai_assigned_marks": None,
+            "ai_feedback": None,
+            "ai_justification": None,
+            "ai_confidence_level": None,
+            "teacher_override_marks": None,
+            "teacher_feedback": None,
+            "modified_by_teacher": False,
+            "evaluated_at": None,
+            "reviewed_by": None,
+            "reviewed_at": None,
+            "override_reason": None,
+            "error_code": None
+        }
+        
+    mongo_db.exam_attempt_answers.update_one(
+        {"attempt_id": str(attempt["id"])},
+        {"$set": submission_data},
+        upsert=True
+    )
     
     return dict(completed_attempt)

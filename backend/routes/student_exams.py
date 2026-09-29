@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
 from sqlalchemy.orm import Session
 from typing import Dict, Any, List
 from databases.database import get_db
@@ -58,7 +58,7 @@ def save_attempt_answers(exam_id: str, attempt_id: str, payload: Dict[str, Any],
 
 
 @router.post("/{exam_id}/submit")
-def submit_exam(exam_id: str, payload: Dict[str, Any], db: Session = Depends(get_db), current_user: dict = Depends(require_roles("student"))):
+def submit_exam(exam_id: str, payload: Dict[str, Any], background_tasks: BackgroundTasks, db: Session = Depends(get_db), current_user: dict = Depends(require_roles("student"))):
     try:
         result = student_exam_service.submit_exam_attempt(
             int(current_user["sub"]), 
@@ -66,6 +66,24 @@ def submit_exam(exam_id: str, payload: Dict[str, Any], db: Session = Depends(get
             payload.get("answers", []), 
             db
         )
+        # Enqueue evaluation
+        from services.evaluation_job_service import evaluate_submission
+        background_tasks.add_task(evaluate_submission, str(result["id"]), exam_id)
+        
         return {"status": "success", "attempt": result}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+@router.get("/{exam_id}/attempts/{attempt_id}/result")
+def get_attempt_result(exam_id: str, attempt_id: str, db: Session = Depends(get_db), current_user: dict = Depends(require_roles("student"))):
+    try:
+        attempt = student_exam_service.get_student_attempt(int(current_user["sub"]), exam_id, db)
+        if str(attempt["id"]) != attempt_id:
+            raise HTTPException(status_code=403, detail="Attempt ID mismatch")
+            
+        if not attempt.get("result_published_at"):
+            raise HTTPException(status_code=403, detail="Results are not published yet")
+            
+        return attempt
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))

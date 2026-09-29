@@ -20,7 +20,7 @@ import { Exam, getTeacherExams, createExam, deleteExam } from "@/app/lib/exams";
 import SyllabusUploadModal from "@/app/components/SyllabusUploadModal";
 import { useRouter } from "next/navigation";
 
-type Tab = "classes" | "requests" | "exams" | "profile";
+type Tab = "classes" | "requests" | "exams" | "results" | "profile";
 
 export default function TeacherDashboard() {
   const router = useRouter();
@@ -234,13 +234,14 @@ export default function TeacherDashboard() {
         </div>
 
         <nav className="flex-1">
-          {(["classes", "requests", "exams", "profile"] as Tab[]).map(t => {
+          {(["classes", "requests", "exams", "results", "profile"] as Tab[]).map(t => {
             const active = tab === t;
-            const labels: Record<Tab, string> = { classes: "My Classes", requests: "Join Requests", exams: "Exams", profile: "Profile" };
+            const labels: Record<Tab, string> = { classes: "My Classes", requests: "Join Requests", exams: "Exams", results: "Results", profile: "Profile" };
             const icons: Record<Tab, React.ReactNode> = {
               classes: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="7" height="7" /><rect x="14" y="3" width="7" height="7" /><rect x="14" y="14" width="7" height="7" /><rect x="3" y="14" width="7" height="7" /></svg>,
               requests: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M23 21v-2a4 4 0 00-3-3.87" /><path d="M16 3.13a4 4 0 010 7.75" /></svg>,
               exams: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z" /><polyline points="14 2 14 8 20 8" /><line x1="16" y1="13" x2="8" y2="13" /><line x1="16" y1="17" x2="8" y2="17" /><line x1="10" y1="9" x2="8" y2="9" /></svg>,
+              results: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"></path><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"></path></svg>,
               profile: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="8" r="4" /><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7" /></svg>,
             };
             return (
@@ -414,6 +415,54 @@ export default function TeacherDashboard() {
                       onClick={() => router.push(exam.status === 'published' ? `/teacher/exams/${exam.id}/paper` : `/teacher/exams/${exam.id}/blueprint`)}
                       className="w-full py-2 bg-slate-50 hover:bg-[#2563eb]/10 border border-slate-200 hover:border-[#2563eb]/30 text-slate-700 hover:text-[#2563eb] rounded-md text-[0.85rem] font-semibold transition-colors cursor-pointer mt-2">
                       {exam.status === 'published' ? 'View Approved Paper' : 'Edit Blueprint & Generate'}
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ── Results Tab ── */}
+        {tab === "results" && (
+          <div className="animate-fade-up">
+            <div className="flex items-center justify-between mb-8">
+              <div>
+                <h1 className="text-[1.8rem] font-bold text-slate-900 tracking-tight mb-1">Exam Results</h1>
+                <p className="text-slate-600 text-[0.9rem]">Review student attempts and publish results</p>
+              </div>
+            </div>
+
+            {loading ? (
+              <div className="text-center py-20 text-slate-500 text-[0.9rem]">Loading exams...</div>
+            ) : exams.length === 0 ? (
+              <EmptyState 
+                icon="📊" 
+                title="No exams yet" 
+                desc="Create and publish exams to see results here."
+                action="Go to Exams"
+                onAction={() => setTab("exams")}
+              />
+            ) : (
+              <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-5">
+                {exams.filter(e => e.status === 'published').length === 0 ? (
+                  <div className="col-span-full p-10 bg-slate-50 rounded-xl border border-slate-200 text-center">
+                    <p className="text-slate-500 font-medium mb-2">No published exams yet.</p>
+                    <p className="text-sm text-slate-400">Exams must be published before students can take them.</p>
+                  </div>
+                ) : exams.filter(e => e.status === 'published').map(exam => (
+                  <div key={exam.id} className="bg-white border border-slate-200 rounded-xl p-5 hover:shadow-md transition-all">
+                    <div className="flex justify-between items-start mb-2">
+                      <h3 className="font-bold text-slate-900 line-clamp-1 pr-2">{exam.title}</h3>
+                    </div>
+                    <p className="text-slate-500 text-[0.85rem] mb-4">Class: {exam.class_name}</p>
+                    <div className="flex justify-between text-[0.8rem] text-slate-600 mb-4">
+                      <span>{exam.total_marks} Marks</span>
+                    </div>
+                    <button 
+                      onClick={() => router.push(`/teacher/exams/${exam.id}/results`)}
+                      className="w-full py-2 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 hover:border-indigo-300 text-indigo-700 rounded-md text-[0.85rem] font-semibold transition-colors cursor-pointer mt-2">
+                      View Student Attempts
                     </button>
                   </div>
                 ))}

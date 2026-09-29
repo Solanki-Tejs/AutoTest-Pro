@@ -40,6 +40,36 @@ export default function ExamWorkspaceLayout(props: {
   // Determine current step index
   const currentStepIndex = steps.findIndex(s => pathname.includes(s.id));
 
+  const isResultsPage = pathname.includes("/results");
+
+  if (isResultsPage) {
+    return (
+      <div className="min-h-screen bg-slate-50 flex flex-col">
+        {/* Workspace Header - Simplified for Results */}
+        <header className="bg-white border-b border-slate-200 px-8 py-4 shrink-0 flex items-center gap-4 sticky top-0 z-50">
+          <button 
+            onClick={() => router.push("/teacher/dashboard")} 
+            className="text-slate-500 hover:text-slate-900 transition-colors"
+            title="Back to Dashboard"
+          >
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+          </button>
+          <div>
+            <h1 className="text-xl font-bold text-slate-900 tracking-tight leading-tight">Exam Results</h1>
+            <p className="text-[0.75rem] text-slate-500 font-medium tracking-wide">ID: {params.examId}</p>
+          </div>
+        </header>
+
+        {/* Main Content Area */}
+        <main className="flex-1 p-8 overflow-y-auto">
+          <div className="max-w-5xl mx-auto w-full">
+            {children}
+          </div>
+        </main>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col">
       {/* Workspace Header */}

@@ -32,7 +32,7 @@ export default function ExamSubmittedPage() {
       .then(exams => {
         const found = exams.find(e => e.id === examId);
         if (found) {
-          if (!found.attempt || found.attempt.status !== "submitted") {
+          if (!found.attempt || (found.attempt.status !== "submitted" && found.attempt.status !== "evaluated")) {
             setError("This exam has not been submitted yet.");
           } else {
             setExam(found);
@@ -110,6 +110,23 @@ export default function ExamSubmittedPage() {
               <span className="text-slate-500 font-medium">Submitted At</span>
               <span className="text-slate-900 font-bold">{completedAt.toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" })}</span>
             </div>
+            <div className="flex justify-between items-center py-3 border-b border-slate-100">
+              <span className="text-slate-500 font-medium">Evaluation Status</span>
+              <span className={`font-bold ${exam.attempt.status === 'evaluated' ? 'text-green-600' : 'text-amber-500'}`}>
+                {exam.attempt.status === 'evaluated' ? 'Completed' : 'Evaluation pending'}
+              </span>
+            </div>
+            {exam.attempt.result_published_at && (
+              <div className="flex justify-between items-center py-3 border-b border-slate-100">
+                <span className="text-slate-500 font-medium">Results</span>
+                <button 
+                  onClick={() => router.push(`/student/exams/${exam.id}/result`)}
+                  className="text-[#6c63ff] font-bold hover:underline"
+                >
+                  View Results →
+                </button>
+              </div>
+            )}
           </div>
 
           <div className="mt-10">
