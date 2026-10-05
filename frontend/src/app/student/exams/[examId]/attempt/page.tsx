@@ -12,6 +12,7 @@ import {
   submitExam
 } from "@/app/lib/student_exams";
 import WebcamProctor from "./WebcamProctor";
+import BrowserSecurity from "./BrowserSecurity";
 
 // Minimal types for the exam paper
 type QuestionType = "mcq" | "short_answer" | "long_answer" | "multiple_select";
@@ -571,7 +572,10 @@ export default function LiveExamPage() {
 
       {/* Proctoring Component */}
       {exam && exam.attempt && (
-        <WebcamProctor examId={exam.id} attemptId={exam.attempt.id} />
+        <>
+          <WebcamProctor examId={exam.id} attemptId={exam.attempt.id} />
+          <BrowserSecurity examId={exam.id} attemptId={exam.attempt.id} />
+        </>
       )}
     </div>
   );

@@ -120,3 +120,36 @@ def upload_proctoring_frame(
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.post("/{exam_id}/attempts/{attempt_id}/proctoring/violation")
+def report_browser_violation(
+    exam_id: str, 
+    attempt_id: str, 
+    payload: Dict[str, Any],
+    db: Session = Depends(get_db), 
+    current_user: dict = Depends(require_roles("student"))
+):
+    try:
+        # Validate that the attempt belongs to this student and is active
+        attempt = student_exam_service.get_student_attempt(int(current_user["sub"]), exam_id, db)
+        if str(attempt["id"]) != attempt_id:
+            raise HTTPException(status_code=403, detail="Attempt ID mismatch")
+            
+        if attempt["completed_at"]:
+            raise HTTPException(status_code=400, detail="Exam already completed")
+            
+        event_type = payload.get("type", "UNKNOWN_VIOLATION")
+        description = payload.get("description", "A browser security violation occurred.")
+        metadata = payload.get("metadata", {})
+        
+        return proctoring_service.log_browser_violation(
+            int(current_user["sub"]),
+            exam_id,
+            attempt_id,
+            event_type,
+            description,
+            metadata
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))

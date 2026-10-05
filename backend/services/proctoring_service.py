@@ -159,3 +159,28 @@ def analyze_proctoring_frame(student_id: int, exam_id: str, attempt_id: str, fil
         "event_type": event_type,
         "metadata": metadata
     }
+
+def log_browser_violation(student_id: int, exam_id: str, attempt_id: str, event_type: str, description: str, metadata: dict = None):
+    mongo_db = get_mongo_db()
+    
+    event = {
+        "event_id": str(uuid.uuid4()),
+        "eventType": event_type,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "details": {
+            "description": description,
+            "duration_seconds": 0,
+            "snapshot_url": None,
+            "metadata": metadata or {}
+        }
+    }
+    
+    mongo_db.proctoring_events.update_one(
+        {"attempt_id": attempt_id},
+        {
+            "$setOnInsert": {"attempt_id": attempt_id, "exam_id": exam_id, "student_id": student_id},
+            "$push": {"events": event}
+        },
+        upsert=True
+    )
+    return {"status": "success", "event_type": event_type}
