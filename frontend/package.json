@@ -9,6 +9,7 @@
     "lint": "eslint"
   },
   "dependencies": {
+    "@mediapipe/tasks-vision": "^1.0.1",
     "dom-to-image-more": "^3.10.2",
     "html2pdf.js": "^0.14.0",
     "jspdf": "^4.2.1",

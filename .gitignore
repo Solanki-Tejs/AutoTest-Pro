@@ -67,3 +67,4 @@ skills/
 
 #upload syllabus folder
 backend/storage/*/
+backend/uploads/*

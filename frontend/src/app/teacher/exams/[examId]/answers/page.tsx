@@ -56,17 +56,17 @@ export default function AnswersPage() {
         // Fetch paper to display questions
         const pb = await getQuestionBank(token!, examId);
         setPaper(pb);
-        
+
         if (pb.generation) {
           const bpVer = pb.generation.blueprint_version || 1;
           const pbSylls = [...(pb.generation.syllabus_ids || [])].sort();
           const exSylls = [...(ex.selected_pdf_ids || [])].sort();
-          
+
           let paperMarks = 0;
           pb.question_body?.sections?.forEach(sec => {
             sec.questions?.forEach(q => paperMarks += (q.mark || 0));
           });
-          
+
           if (bpVer !== blp.version || JSON.stringify(pbSylls) !== JSON.stringify(exSylls) || paperMarks !== ex.total_marks) {
             setIsPaperStale(true);
           }
@@ -87,7 +87,7 @@ export default function AnswersPage() {
           setAnswerBank(ab);
 
           if (ab.question_bank_version !== pb.version) {
-             setIsStale(true);
+            setIsStale(true);
           }
         } catch (e) {
           // No answer bank yet, show generation UI
@@ -157,7 +157,7 @@ export default function AnswersPage() {
 
   async function handleApprove() {
     if (!token || !answerBank || !paper) return;
-    
+
     // Validation
     const allQuestions = paper.question_body.sections.flatMap(s => s.questions);
     const hasMissing = allQuestions.some(q => !answerBank.answer_body.find(a => a.question_id === q.question_id));
@@ -182,7 +182,7 @@ export default function AnswersPage() {
         if (!prev) return prev;
         return {
           ...prev,
-          answer_body: prev.answer_body.map(a => 
+          answer_body: prev.answer_body.map(a =>
             a.answer_id === answerId ? { ...a, ...updates, is_edited: true } : a
           )
         };
@@ -286,7 +286,7 @@ export default function AnswersPage() {
                 </div>
               )}
             </div>
-            
+
             <button
               onClick={handleApprove}
               className="px-6 py-2 bg-[#16a34a] hover:bg-[#15803d] text-white text-[0.9rem] font-bold rounded-md shadow-sm transition-colors flex items-center gap-2"

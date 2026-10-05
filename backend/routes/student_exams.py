@@ -1,9 +1,10 @@
-from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
+from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks, UploadFile, File
 from sqlalchemy.orm import Session
 from typing import Dict, Any, List
 from databases.database import get_db
 from routes.dependencies import require_roles
 from services import student_exam_service
+from services import proctoring_service
 
 router = APIRouter()
 
@@ -34,8 +35,12 @@ def get_student_attempt(exam_id: str, db: Session = Depends(get_db), current_use
 @router.get("/{exam_id}/paper")
 def get_exam_paper(exam_id: str, db: Session = Depends(get_db), current_user: dict = Depends(require_roles("student"))):
     try:
-        # Validate that the student has an active attempt
-        attempt = student_exam_service.start_exam_attempt(int(current_user["sub"]), exam_id, db)
+        # Check if they already have an attempt (even completed ones need the paper for results)
+        try:
+            attempt = student_exam_service.get_student_attempt(int(current_user["sub"]), exam_id, db)
+        except ValueError:
+            # If no attempt exists, try to start one (validates enrollment and time window)
+            attempt = student_exam_service.start_exam_attempt(int(current_user["sub"]), exam_id, db)
         
         # Return sanitized question bank
         return student_exam_service.get_sanitized_question_bank(exam_id)
@@ -85,5 +90,33 @@ def get_attempt_result(exam_id: str, attempt_id: str, db: Session = Depends(get_
             raise HTTPException(status_code=403, detail="Results are not published yet")
             
         return attempt
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+@router.post("/{exam_id}/attempts/{attempt_id}/proctoring/frame")
+def upload_proctoring_frame(
+    exam_id: str, 
+    attempt_id: str, 
+    image: UploadFile = File(...), 
+    db: Session = Depends(get_db), 
+    current_user: dict = Depends(require_roles("student"))
+):
+    try:
+        # Validate that the attempt belongs to this student and is active
+        attempt = student_exam_service.get_student_attempt(int(current_user["sub"]), exam_id, db)
+        if str(attempt["id"]) != attempt_id:
+            raise HTTPException(status_code=403, detail="Attempt ID mismatch")
+            
+        if attempt["completed_at"]:
+            raise HTTPException(status_code=400, detail="Exam already completed")
+            
+        # Process the image with OpenCV
+        return proctoring_service.analyze_proctoring_frame(
+            int(current_user["sub"]), 
+            exam_id, 
+            attempt_id, 
+            image, 
+            db
+        )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))

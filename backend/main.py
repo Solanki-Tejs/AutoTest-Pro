@@ -4,6 +4,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from routes import question_bank
 from routes import auth, health, classes, syllabus, topics
 from databases.mongo import init_mongo
+from fastapi.staticfiles import StaticFiles
+import os
 
 app = FastAPI(
     title="AutoTest Pro API",
@@ -22,6 +24,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+os.makedirs("uploads/proctoring", exist_ok=True)
+app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
 
 app.include_router(health.router, prefix="/api/health", tags=["Health"])
 app.include_router(auth.router, prefix="/api/auth", tags=["Authentication"])

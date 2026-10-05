@@ -39,3 +39,4 @@ websockets==17.0.1
 sentence-transformers==3.0.1
 pgvector==0.3.1
 pymongo==4.7.0
+mediapipe==1.0.1

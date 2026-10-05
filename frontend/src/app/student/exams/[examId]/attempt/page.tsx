@@ -3,14 +3,15 @@
 import { useEffect, useState, useRef, useCallback } from "react";
 import { useRouter, useParams } from "next/navigation";
 import { getStoredUser, getStoredToken } from "@/app/lib/auth";
-import { 
-  StudentExam, 
+import {
+  StudentExam,
   getAllStudentExams,
   getExamAttempt,
-  getExamPaper, 
-  saveAnswers, 
-  submitExam 
+  getExamPaper,
+  saveAnswers,
+  submitExam
 } from "@/app/lib/student_exams";
+import WebcamProctor from "./WebcamProctor";
 
 // Minimal types for the exam paper
 type QuestionType = "mcq" | "short_answer" | "long_answer" | "multiple_select";
@@ -50,32 +51,32 @@ export default function LiveExamPage() {
   const router = useRouter();
   const params = useParams();
   const examId = params.examId as string;
-  
+
   const [token, setToken] = useState<string | null>(null);
   const [exam, setExam] = useState<StudentExam | null>(null);
   const [paper, setPaper] = useState<Paper | null>(null);
-  
+
   const [answers, setAnswers] = useState<Record<string, any>>({});
   const [reviewFlags, setReviewFlags] = useState<Record<string, boolean>>({});
-  
+
   const [activeSectionIdx, setActiveSectionIdx] = useState(0);
   const [activeQuestionIdx, setActiveQuestionIdx] = useState(0);
-  
+
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  
+
   const [saving, setSaving] = useState(false);
   const [lastSavedTime, setLastSavedTime] = useState<Date | null>(null);
-  
+
   const [timeLeftStr, setTimeLeftStr] = useState("");
   const [isTimeLow, setIsTimeLow] = useState(false);
   const [deadlineReached, setDeadlineReached] = useState(false);
-  
+
   const [submitting, setSubmitting] = useState(false);
   const [showSubmitConfirm, setShowSubmitConfirm] = useState(false);
-  
+
   const answersRef = useRef(answers);
-  
+
   useEffect(() => {
     answersRef.current = answers;
   }, [answers]);
@@ -118,23 +119,23 @@ export default function LiveExamPage() {
 
   useEffect(() => {
     if (!token) return;
-    
+
     async function loadData() {
       try {
         const exams = await getAllStudentExams(token!);
         const found = exams.find(e => e.id === examId);
-        
+
         if (!found) throw new Error("Exam not found");
         if (!found.attempt || found.attempt.status === "submitted") {
-           router.push(`/student/exams/${examId}/submitted`);
-           return;
+          router.push(`/student/exams/${examId}/submitted`);
+          return;
         }
-        
+
         setExam(found);
-        
+
         const paperData = await getExamPaper(token!, examId);
         setPaper(paperData);
-        
+
         // Load previously saved answers from backend
         try {
           const attemptData = await getExamAttempt(token!, examId);
@@ -148,30 +149,30 @@ export default function LiveExamPage() {
             setAnswers(initialAnswers);
           }
         } catch (attemptErr) {
-           console.error("Failed to load saved answers", attemptErr);
+          console.error("Failed to load saved answers", attemptErr);
         }
-        
+
         setLoading(false);
       } catch (err: any) {
         setError(err.message || "Failed to load exam data");
         setLoading(false);
       }
     }
-    
+
     loadData();
   }, [token, examId, router]);
 
   // Timer logic
   useEffect(() => {
     if (!exam || !exam.attempt) return;
-    
+
     const deadlineStr = exam.attempt.deadline;
     const deadline = new Date(deadlineStr.match(/(Z|[+-]\d{2}(:\d{2})?)$/) ? deadlineStr : deadlineStr + 'Z').getTime();
-    
+
     const interval = setInterval(() => {
       const now = new Date().getTime();
       const diff = deadline - now;
-      
+
       if (diff <= 0) {
         clearInterval(interval);
         setTimeLeftStr("00:00:00");
@@ -186,7 +187,7 @@ export default function LiveExamPage() {
         setIsTimeLow(diff < 5 * 60 * 1000); // Less than 5 mins
       }
     }, 1000);
-    
+
     return () => clearInterval(interval);
   }, [exam]);
 
@@ -218,13 +219,13 @@ export default function LiveExamPage() {
   // Debounced save
   useEffect(() => {
     if (loading || !token || !exam) return;
-    
+
     const handler = setTimeout(() => {
       if (Object.keys(answersRef.current).length > 0) {
         handleSaveAnswers(answersRef.current);
       }
     }, 2000); // 2s debounce
-    
+
     return () => clearTimeout(handler);
   }, [answers, loading, token, exam, handleSaveAnswers]);
 
@@ -232,7 +233,7 @@ export default function LiveExamPage() {
   const handleFinalSubmit = async () => {
     if (!token || !exam) return;
     setSubmitting(true);
-    
+
     try {
       const answerArr: AnswerRecord[] = Object.entries(answersRef.current).map(([qid, ans]) => ({
         question_id: qid,
@@ -307,7 +308,7 @@ export default function LiveExamPage() {
             {timeLeftStr || "--:--:--"}
           </div>
 
-          <button 
+          <button
             onClick={() => setShowSubmitConfirm(true)}
             className="px-6 py-2.5 bg-[#6c63ff] hover:bg-[#5a52d5] text-white font-bold rounded-lg shadow-sm transition-colors"
           >
@@ -322,8 +323,8 @@ export default function LiveExamPage() {
           <div className="p-5 border-b border-slate-100">
             <div className="text-sm font-bold text-slate-900 mb-3">Exam Progress</div>
             <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden mb-2">
-              <div 
-                className="bg-green-500 h-full transition-all duration-500" 
+              <div
+                className="bg-green-500 h-full transition-all duration-500"
                 style={{ width: `${Math.round((answeredCount / totalQuestions) * 100)}%` }}
               ></div>
             </div>
@@ -344,7 +345,7 @@ export default function LiveExamPage() {
                     const isAnswered = !!answers[q.question_id];
                     const isReview = reviewFlags[q.question_id];
                     const isActive = activeSectionIdx === sIdx && activeQuestionIdx === qIdx;
-                    
+
                     let bg = "bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100";
                     if (isActive) bg = "bg-blue-50 border-blue-400 text-blue-700 font-bold ring-2 ring-blue-400/20";
                     else if (isReview) bg = "bg-purple-50 border-purple-300 text-purple-700";
@@ -368,7 +369,7 @@ export default function LiveExamPage() {
               </div>
             ))}
           </div>
-          
+
           <div className="p-4 border-t border-slate-100 bg-slate-50 text-xs text-slate-500 space-y-2 font-medium">
             <div className="flex items-center gap-2"><div className="w-3 h-3 rounded bg-green-100 border border-green-300"></div> Answered</div>
             <div className="flex items-center gap-2"><div className="w-3 h-3 rounded bg-purple-100 border border-purple-300"></div> Marked for Review</div>
@@ -392,16 +393,15 @@ export default function LiveExamPage() {
                     <div className="text-xs text-slate-400 capitalize">{activeQuestion.type.replace('_', ' ')}</div>
                   </div>
                 </div>
-                
+
                 <div className="flex items-center gap-4">
                   <div className="text-sm font-bold bg-slate-100 px-3 py-1 rounded-md text-slate-600">
                     {activeQuestion.mark} Mark{activeQuestion.mark > 1 ? 's' : ''}
                   </div>
-                  <button 
+                  <button
                     onClick={() => toggleReviewFlag(activeQuestion.question_id)}
-                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-semibold transition-colors ${
-                      reviewFlags[activeQuestion.question_id] ? "bg-purple-100 text-purple-700" : "bg-slate-50 text-slate-500 hover:bg-slate-100"
-                    }`}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-semibold transition-colors ${reviewFlags[activeQuestion.question_id] ? "bg-purple-100 text-purple-700" : "bg-slate-50 text-slate-500 hover:bg-slate-100"
+                      }`}
                   >
                     <svg width="14" height="14" viewBox="0 0 24 24" fill={reviewFlags[activeQuestion.question_id] ? "currentColor" : "none"} stroke="currentColor" strokeWidth="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>
                     {reviewFlags[activeQuestion.question_id] ? "Reviewed" : "Mark for Review"}
@@ -419,21 +419,19 @@ export default function LiveExamPage() {
                 {(activeQuestion.type === "mcq" || (activeQuestion.options && activeQuestion.options.length > 0 && activeQuestion.type !== "multiple_select")) && (
                   <div className="space-y-3">
                     {activeQuestion.options?.map(opt => (
-                      <label 
-                        key={opt.id} 
-                        className={`flex items-center gap-4 p-4 rounded-xl border-2 cursor-pointer transition-all ${
-                          answers[activeQuestion.question_id] === opt.id 
-                            ? "border-[#6c63ff] bg-[#6c63ff]/5" 
+                      <label
+                        key={opt.id}
+                        className={`flex items-center gap-4 p-4 rounded-xl border-2 cursor-pointer transition-all ${answers[activeQuestion.question_id] === opt.id
+                            ? "border-[#6c63ff] bg-[#6c63ff]/5"
                             : "border-slate-200 hover:border-slate-300 bg-white"
-                        }`}
+                          }`}
                         onClick={(e) => {
                           e.preventDefault(); // prevent double firing if nested input added later
                           handleAnswerChange(activeQuestion.question_id, opt.id);
                         }}
                       >
-                        <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 ${
-                          answers[activeQuestion.question_id] === opt.id ? "border-[#6c63ff]" : "border-slate-300"
-                        }`}>
+                        <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 ${answers[activeQuestion.question_id] === opt.id ? "border-[#6c63ff]" : "border-slate-300"
+                          }`}>
                           {answers[activeQuestion.question_id] === opt.id && <div className="w-2.5 h-2.5 rounded-full bg-[#6c63ff]"></div>}
                         </div>
                         <span className="text-slate-700 font-medium">{opt.text}</span>
@@ -441,19 +439,18 @@ export default function LiveExamPage() {
                     ))}
                   </div>
                 )}
-                
+
                 {activeQuestion.type === "multiple_select" && (
                   <div className="space-y-3">
                     {activeQuestion.options?.map(opt => {
                       const currAns = answers[activeQuestion.question_id] || [];
                       const isSelected = Array.isArray(currAns) && currAns.includes(opt.id);
-                      
+
                       return (
-                        <label 
-                          key={opt.id} 
-                          className={`flex items-center gap-4 p-4 rounded-xl border-2 cursor-pointer transition-all ${
-                            isSelected ? "border-[#6c63ff] bg-[#6c63ff]/5" : "border-slate-200 hover:border-slate-300 bg-white"
-                          }`}
+                        <label
+                          key={opt.id}
+                          className={`flex items-center gap-4 p-4 rounded-xl border-2 cursor-pointer transition-all ${isSelected ? "border-[#6c63ff] bg-[#6c63ff]/5" : "border-slate-200 hover:border-slate-300 bg-white"
+                            }`}
                           onClick={(e) => {
                             e.preventDefault();
                             let newArr = [...currAns];
@@ -462,9 +459,8 @@ export default function LiveExamPage() {
                             handleAnswerChange(activeQuestion.question_id, newArr);
                           }}
                         >
-                          <div className={`w-5 h-5 rounded border-2 flex items-center justify-center shrink-0 ${
-                            isSelected ? "border-[#6c63ff] bg-[#6c63ff]" : "border-slate-300"
-                          }`}>
+                          <div className={`w-5 h-5 rounded border-2 flex items-center justify-center shrink-0 ${isSelected ? "border-[#6c63ff] bg-[#6c63ff]" : "border-slate-300"
+                            }`}>
                             {isSelected && <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3"><polyline points="20 6 9 17 4 12"></polyline></svg>}
                           </div>
                           <span className="text-slate-700 font-medium">{opt.text}</span>
@@ -475,8 +471,8 @@ export default function LiveExamPage() {
                 )}
 
                 {(!activeQuestion.options || activeQuestion.options.length === 0) && (!activeQuestion.type || !activeQuestion.type.includes("long")) && (
-                  <input 
-                    type="text" 
+                  <input
+                    type="text"
                     value={answers[activeQuestion.question_id] || ""}
                     onChange={(e) => handleAnswerChange(activeQuestion.question_id, e.target.value)}
                     placeholder="Type your answer here..."
@@ -485,7 +481,7 @@ export default function LiveExamPage() {
                 )}
 
                 {(!activeQuestion.options || activeQuestion.options.length === 0) && activeQuestion.type && activeQuestion.type.includes("long") && (
-                  <textarea 
+                  <textarea
                     rows={6}
                     value={answers[activeQuestion.question_id] || ""}
                     onChange={(e) => handleAnswerChange(activeQuestion.question_id, e.target.value)}
@@ -493,10 +489,10 @@ export default function LiveExamPage() {
                     className="w-full p-4 rounded-xl border-2 border-slate-200 focus:border-[#6c63ff] outline-none text-slate-800 transition-colors resize-y"
                   ></textarea>
                 )}
-                
+
                 {answers[activeQuestion.question_id] && activeQuestion.options && activeQuestion.options.length > 0 && (
                   <div className="mt-4 flex justify-end">
-                    <button 
+                    <button
                       onClick={() => handleAnswerChange(activeQuestion.question_id, activeQuestion.type === "multiple_select" ? [] : null)}
                       className="text-sm font-semibold text-slate-400 hover:text-red-500 transition-colors"
                     >
@@ -508,7 +504,7 @@ export default function LiveExamPage() {
 
               {/* Navigation Controls */}
               <div className="flex items-center justify-between pt-6 border-t border-slate-100 mt-10">
-                <button 
+                <button
                   onClick={() => {
                     if (activeQuestionIdx > 0) setActiveQuestionIdx(i => i - 1);
                     else if (activeSectionIdx > 0) {
@@ -521,8 +517,8 @@ export default function LiveExamPage() {
                 >
                   Previous
                 </button>
-                
-                <button 
+
+                <button
                   onClick={() => {
                     if (activeQuestionIdx < activeSection.questions.length - 1) setActiveQuestionIdx(i => i + 1);
                     else if (activeSectionIdx < paper.sections.length - 1) {
@@ -550,16 +546,16 @@ export default function LiveExamPage() {
               Are you sure you want to submit your exam? You have answered <strong>{answeredCount}</strong> out of <strong>{totalQuestions}</strong> questions.
               Once submitted, you will not be able to change your answers.
             </p>
-            
+
             <div className="flex items-center gap-3 justify-end">
-              <button 
+              <button
                 onClick={() => setShowSubmitConfirm(false)}
                 disabled={submitting}
                 className="px-5 py-2.5 rounded-lg font-bold text-slate-600 hover:bg-slate-100 transition-colors"
               >
                 Cancel
               </button>
-              <button 
+              <button
                 onClick={handleFinalSubmit}
                 disabled={submitting}
                 className="px-6 py-2.5 rounded-lg font-bold text-white bg-[#6c63ff] hover:bg-[#5a52d5] shadow-sm transition-colors flex items-center gap-2"
@@ -571,6 +567,11 @@ export default function LiveExamPage() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Proctoring Component */}
+      {exam && exam.attempt && (
+        <WebcamProctor examId={exam.id} attemptId={exam.attempt.id} />
       )}
     </div>
   );

@@ -94,7 +94,8 @@ def get_student_exams(student_id: int, db: Session) -> List[Dict[str, Any]]:
                 'status', ea.status,
                 'started_at', ea.started_at,
                 'completed_at', ea.completed_at,
-                'deadline', ea.deadline
+                'deadline', ea.deadline,
+                'result_published_at', ea.result_published_at
             ) FROM exam_attempts ea WHERE ea.exam_id = e.id AND ea.student_id = :student_id LIMIT 1) as attempt
         FROM exams e
         JOIN class_enrollments ce ON e.class_id = ce.class_id

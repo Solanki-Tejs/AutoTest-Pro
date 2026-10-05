@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { useRouter, useParams } from "next/navigation";
 import { getStoredUser, getStoredToken } from "@/app/lib/auth";
 import { StudentExam, getAllStudentExams, startExamAttempt } from "@/app/lib/student_exams";
@@ -15,6 +15,12 @@ export default function ExamInstructionsPage() {
   const [loading, setLoading] = useState(true);
   const [starting, setStarting] = useState(false);
   const [error, setError] = useState("");
+
+  // Camera states
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const [stream, setStream] = useState<MediaStream | null>(null);
+  const [cameraError, setCameraError] = useState("");
+  const [cameraReady, setCameraReady] = useState(false);
 
   useEffect(() => {
     const t = getStoredToken();
@@ -50,10 +56,14 @@ export default function ExamInstructionsPage() {
   }, [token, examId, router]);
 
   const handleStartExam = async () => {
-    if (!token || !exam) return;
+    if (!token || !exam || !cameraReady) return;
     setStarting(true);
     setError("");
     try {
+      // Stop the preview stream before navigating so the attempt page can grab it
+      if (stream) {
+        stream.getTracks().forEach(track => track.stop());
+      }
       await startExamAttempt(token, exam.id);
       router.push(`/student/exams/${exam.id}/attempt`);
     } catch (e: any) {
@@ -61,6 +71,33 @@ export default function ExamInstructionsPage() {
       setStarting(false);
     }
   };
+
+  const requestCamera = async () => {
+    try {
+      setCameraError("");
+      const mediaStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+      setStream(mediaStream);
+      setCameraReady(true);
+      if (videoRef.current) {
+        videoRef.current.srcObject = mediaStream;
+      }
+    } catch (err: any) {
+      setCameraReady(false);
+      setCameraError("Camera access is required for this exam's proctoring. Please allow camera access and try again.");
+    }
+  };
+
+  // Try to start camera when exam data is loaded
+  useEffect(() => {
+    if (exam && (!exam.attempt || exam.attempt.status === "in_progress") && !cameraReady) {
+      requestCamera();
+    }
+    return () => {
+      if (stream) {
+        stream.getTracks().forEach(track => track.stop());
+      }
+    };
+  }, [exam]);
 
   if (loading) {
     return (
@@ -162,6 +199,67 @@ export default function ExamInstructionsPage() {
               </li>
             </ul>
 
+            {/* Webcam Preview Section */}
+            {(!exam.attempt || exam.attempt?.status === "in_progress") && isAvailable && !isPast && (
+              <div className="mb-10 bg-slate-50 p-6 rounded-2xl border border-slate-200">
+                <h4 className="text-[1.05rem] font-bold text-slate-900 mb-4 flex items-center gap-2">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-[#6c63ff]"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path><circle cx="12" cy="13" r="4"></circle></svg>
+                  Proctoring Setup
+                </h4>
+                
+                <div className="flex flex-col sm:flex-row gap-6 items-center">
+                  <div className="w-full sm:w-[280px] h-[210px] bg-black rounded-xl overflow-hidden relative shadow-inner shrink-0 border-2 border-slate-800">
+                    <video 
+                      ref={videoRef} 
+                      autoPlay 
+                      playsInline 
+                      muted 
+                      className="w-full h-full object-cover transform -scale-x-100"
+                    />
+                    {!cameraReady && !cameraError && (
+                      <div className="absolute inset-0 flex items-center justify-center bg-slate-900">
+                        <div className="w-8 h-8 border-4 border-slate-600 border-t-white rounded-full animate-spin"></div>
+                      </div>
+                    )}
+                  </div>
+                  
+                  <div className="flex-1">
+                    {cameraReady ? (
+                      <div className="bg-green-50 border border-green-200 rounded-lg p-4 text-green-700">
+                        <div className="font-bold flex items-center gap-2 mb-1">
+                          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>
+                          Camera Ready
+                        </div>
+                        <p className="text-[0.9rem]">Your webcam is successfully connected and proctoring is active.</p>
+                      </div>
+                    ) : cameraError ? (
+                      <div className="bg-red-50 border border-red-200 rounded-lg p-4 text-red-700">
+                        <div className="font-bold flex items-center gap-2 mb-2">
+                          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+                          Camera Error
+                        </div>
+                        <p className="text-[0.9rem] mb-3">{cameraError}</p>
+                        <button 
+                          onClick={requestCamera}
+                          className="px-4 py-2 bg-red-100 hover:bg-red-200 text-red-800 font-bold rounded-md text-sm transition-colors"
+                        >
+                          Retry Camera Access
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="text-slate-500 text-[0.9rem]">
+                        Requesting camera access...
+                      </div>
+                    )}
+                    
+                    <p className="text-xs text-slate-500 mt-4 bg-white p-3 rounded-md border border-slate-200">
+                      <strong>Privacy Notice:</strong> This exam requires webcam monitoring. Snapshots will be taken periodically to ensure academic integrity.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
+
             <div className="border-t border-slate-100 pt-8 flex flex-col items-center justify-center">
               {(exam.attempt?.status === "submitted" || exam.attempt?.status === "evaluated") ? (
                 <div className="text-center p-4 bg-green-50 border border-green-200 rounded-lg w-full">
@@ -172,7 +270,10 @@ export default function ExamInstructionsPage() {
               ) : exam.attempt?.status === "in_progress" ? (
                 <button 
                   onClick={() => router.push(`/student/exams/${exam.id}/attempt`)}
-                  className="w-full sm:w-auto px-8 py-3.5 bg-amber-500 text-white font-bold rounded-xl hover:bg-amber-600 shadow-[0_4px_14px_0_rgba(245,158,11,0.39)] transition-all transform hover:-translate-y-0.5 text-lg"
+                  disabled={!cameraReady}
+                  className={`w-full sm:w-auto px-8 py-3.5 text-white font-bold rounded-xl shadow-[0_4px_14px_0_rgba(245,158,11,0.39)] transition-all transform text-lg ${
+                    cameraReady ? "bg-amber-500 hover:bg-amber-600 hover:-translate-y-0.5" : "bg-slate-300 cursor-not-allowed shadow-none"
+                  }`}
                 >
                   Resume Exam Attempt
                 </button>
@@ -190,12 +291,13 @@ export default function ExamInstructionsPage() {
               ) : (
                 <button 
                   onClick={handleStartExam}
-                  disabled={starting}
-                  className={`w-full sm:w-auto px-8 py-3.5 text-white font-bold rounded-xl shadow-[0_4px_14px_0_rgba(108,99,255,0.39)] transition-all transform hover:-translate-y-0.5 text-lg ${
-                    starting ? "bg-[#6c63ff]/70 cursor-not-allowed" : "bg-[#6c63ff] hover:bg-[#5a52d5]"
+                  disabled={starting || !cameraReady}
+                  className={`w-full sm:w-auto px-8 py-3.5 text-white font-bold rounded-xl shadow-[0_4px_14px_0_rgba(108,99,255,0.39)] transition-all transform text-lg ${
+                    starting ? "bg-[#6c63ff]/70 cursor-not-allowed" : 
+                    !cameraReady ? "bg-slate-300 cursor-not-allowed shadow-none" : "bg-[#6c63ff] hover:bg-[#5a52d5] hover:-translate-y-0.5"
                   }`}
                 >
-                  {starting ? "Preparing your exam..." : "Start Exam"}
+                  {starting ? "Preparing your exam..." : !cameraReady ? "Waiting for camera..." : "Start Exam"}
                 </button>
               )}
             </div>

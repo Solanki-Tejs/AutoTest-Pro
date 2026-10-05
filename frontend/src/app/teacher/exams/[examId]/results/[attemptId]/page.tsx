@@ -7,17 +7,17 @@ import { getStoredToken } from "@/app/lib/auth";
 export default function AttemptReviewPage(props: { params: Promise<{ examId: string, attemptId: string }> }) {
   const params = use(props.params);
   const router = useRouter();
-  
+
   const [answers, setAnswers] = useState<any[]>([]);
   const [totalMarks, setTotalMarks] = useState<number | null>(null);
   const [maxMarks, setMaxMarks] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  
+
   const [editingId, setEditingId] = useState<string | null>(null);
   const [overrideMarks, setOverrideMarks] = useState<number>(0);
   const [overrideReason, setOverrideReason] = useState("");
-  
+
   const token = getStoredToken();
   const BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api";
 
@@ -25,17 +25,17 @@ export default function AttemptReviewPage(props: { params: Promise<{ examId: str
     fetch(`${BASE_URL}/teacher/attempts/${params.attemptId}/evaluation`, {
       headers: { Authorization: `Bearer ${token}` }
     })
-    .then(async (res) => {
-      if (!res.ok) throw new Error((await res.json()).detail || "Failed to fetch evaluation");
-      return res.json();
-    })
-    .then(data => {
-      setAnswers(data.answers || []);
-      setTotalMarks(data.total_marks);
-      setMaxMarks(data.max_marks);
-    })
-    .catch(e => setError(e.message))
-    .finally(() => setLoading(false));
+      .then(async (res) => {
+        if (!res.ok) throw new Error((await res.json()).detail || "Failed to fetch evaluation");
+        return res.json();
+      })
+      .then(data => {
+        setAnswers(data.answers || []);
+        setTotalMarks(data.total_marks);
+        setMaxMarks(data.max_marks);
+      })
+      .catch(e => setError(e.message))
+      .finally(() => setLoading(false));
   };
 
   useEffect(() => {
@@ -48,24 +48,24 @@ export default function AttemptReviewPage(props: { params: Promise<{ examId: str
       alert("Reason is required");
       return;
     }
-    
+
     try {
       const res = await fetch(`${BASE_URL}/teacher/attempts/${params.attemptId}/questions/${qId}/marks`, {
         method: 'PATCH',
-        headers: { 
+        headers: {
           Authorization: `Bearer ${token}`,
           "Content-Type": "application/json"
         },
         body: JSON.stringify({ marks: overrideMarks, reason: overrideReason })
       });
-      
+
       if (!res.ok) {
         throw new Error((await res.json()).detail);
       }
-      
+
       setEditingId(null);
       fetchAttempt(); // reload
-    } catch(err: any) {
+    } catch (err: any) {
       alert(err.message);
     }
   };
@@ -78,7 +78,7 @@ export default function AttemptReviewPage(props: { params: Promise<{ examId: str
       });
       if (!res.ok) throw new Error((await res.json()).detail);
       router.push(`/teacher/exams/${params.examId}/results`);
-    } catch(err: any) {
+    } catch (err: any) {
       alert(err.message);
     }
   };
@@ -106,7 +106,7 @@ export default function AttemptReviewPage(props: { params: Promise<{ examId: str
         {answers.map((ans, idx) => {
           const evalData = ans.evaluation || {};
           const isEditing = editingId === ans.question_id;
-          
+
           return (
             <div key={idx} className="p-6 rounded-xl border border-slate-200 bg-slate-50 space-y-4">
               <div className="flex justify-between items-start gap-4">
@@ -127,18 +127,18 @@ export default function AttemptReviewPage(props: { params: Promise<{ examId: str
                   )}
                 </div>
               </div>
-              
+
               <div className="text-sm bg-white p-4 rounded border border-slate-200">
                 <strong>Student Answer:</strong> {JSON.stringify(ans.answer)}
               </div>
-              
+
               <div className="text-sm bg-blue-50/50 p-4 rounded border border-blue-100">
                 <strong>AI Feedback:</strong> {evalData.ai_feedback}
                 <div className="mt-2 text-slate-500 italic text-xs">
                   Justification: {evalData.ai_justification} (Confidence: {evalData.ai_confidence_level})
                 </div>
               </div>
-              
+
               {evalData.modified_by_teacher && (
                 <div className="text-sm bg-purple-50 p-4 rounded border border-purple-200">
                   <strong>Override Reason:</strong> {evalData.override_reason}
@@ -149,16 +149,16 @@ export default function AttemptReviewPage(props: { params: Promise<{ examId: str
                 <div className="p-4 bg-white border border-slate-300 rounded-lg space-y-3 mt-4 shadow-sm">
                   <h4 className="font-bold text-slate-800">Override Marks</h4>
                   <div className="flex items-center gap-4">
-                    <input 
-                      type="number" 
-                      value={overrideMarks} 
+                    <input
+                      type="number"
+                      value={overrideMarks}
                       onChange={(e) => setOverrideMarks(parseFloat(e.target.value))}
                       className="border p-2 rounded w-24 outline-none focus:border-[#6c63ff]"
                       placeholder="Marks"
                     />
-                    <input 
-                      type="text" 
-                      value={overrideReason} 
+                    <input
+                      type="text"
+                      value={overrideReason}
                       onChange={(e) => setOverrideReason(e.target.value)}
                       className="border p-2 rounded flex-1 outline-none focus:border-[#6c63ff]"
                       placeholder="Required reason for override"
@@ -170,7 +170,7 @@ export default function AttemptReviewPage(props: { params: Promise<{ examId: str
                   </div>
                 </div>
               ) : (
-                <button 
+                <button
                   onClick={() => {
                     setEditingId(ans.question_id);
                     setOverrideMarks(evalData.modified_by_teacher ? evalData.teacher_override_marks : evalData.ai_assigned_marks);
