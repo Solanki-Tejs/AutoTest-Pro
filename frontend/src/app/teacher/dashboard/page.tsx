@@ -50,6 +50,8 @@ export default function TeacherDashboard() {
 
   // Request action states
   const [actionLoading, setActionLoading] = useState<Record<number, string>>({});
+  const [requestTab, setRequestTab] = useState<"pending" | "approved" | "rejected">("pending");
+  const [requestClassTab, setRequestClassTab] = useState<number | "all">("all");
 
   useEffect(() => {
     const u = getStoredUser();
@@ -62,6 +64,24 @@ export default function TeacherDashboard() {
     setToken(t);
   }, [router]);
 
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+    const savedTab = sessionStorage.getItem("teacherDashTab") as Tab;
+    if (savedTab && ["classes", "requests", "exams", "results", "profile"].includes(savedTab)) {
+      setTab(savedTab);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (mounted) {
+      sessionStorage.setItem("teacherDashTab", tab);
+    }
+  }, [tab, mounted]);
+
+
+
   const loadData = useCallback(async () => {
     if (!token) return;
     setLoading(true);
@@ -71,6 +91,23 @@ export default function TeacherDashboard() {
       setClasses(cls);
       setRequests(reqs);
       setExams(exms);
+
+      const savedClassId = sessionStorage.getItem("teacherDashClassId");
+      if (savedClassId) {
+        const found = cls.find(c => c.id.toString() === savedClassId);
+        if (found) {
+          setSelectedClass(found);
+          setStudentsLoading(true);
+          try {
+            const s = await fetchClassStudents(token, found.id);
+            setStudents(s);
+          } catch {
+            setStudents([]);
+          } finally {
+            setStudentsLoading(false);
+          }
+        }
+      }
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Failed to load");
     } finally {
@@ -84,6 +121,7 @@ export default function TeacherDashboard() {
 
   async function openClass(cls: ClassItem) {
     setSelectedClass(cls);
+    sessionStorage.setItem("teacherDashClassId", cls.id.toString());
     if (!token) return;
     setStudentsLoading(true);
     try {
@@ -98,6 +136,7 @@ export default function TeacherDashboard() {
 
   function closeClass() {
     setSelectedClass(null);
+    sessionStorage.removeItem("teacherDashClassId");
     setStudents([]);
   }
 
@@ -108,7 +147,7 @@ export default function TeacherDashboard() {
       setTab("classes");
       return;
     }
-    
+
     setLoading(true);
     try {
       const draftExam = await createExam(token, {
@@ -205,8 +244,12 @@ export default function TeacherDashboard() {
       if (selectedClass?.id === classId) closeClass();
     } catch { /* silently fail */ }
   }
-
-  function handleLogout() { logout(); router.push("/teacher/login"); }
+  function handleLogout() {
+    sessionStorage.removeItem("teacherDashTab");
+    sessionStorage.removeItem("teacherDashClassId");
+    logout();
+    router.push("/teacher/login");
+  }
 
   if (!user) return null;
 
@@ -316,6 +359,7 @@ export default function TeacherDashboard() {
         {/* ── Class Detail View ── */}
         {tab === "classes" && selectedClass && (
           <ClassDetailView
+            key={selectedClass.id}
             cls={selectedClass}
             students={students}
             studentsLoading={studentsLoading}
@@ -338,12 +382,50 @@ export default function TeacherDashboard() {
               <p className="text-slate-600 text-[0.9rem]">{pendingRequests.length} pending</p>
             </div>
 
-            {requests.length === 0 ? (
-              <EmptyState icon="✅" title="No requests" desc="Student join requests will appear here for approval." />
+            <div className="flex gap-6 border-b border-slate-200 mb-6">
+              {(["pending", "approved", "rejected"] as const).map(t => (
+                <button
+                  key={t}
+                  onClick={() => setRequestTab(t)}
+                  className={`pb-3 text-[0.9rem] font-semibold capitalize border-b-2 transition-colors cursor-pointer ${
+                    requestTab === t ? "border-[#2563eb] text-[#2563eb]" : "border-transparent text-slate-500 hover:text-slate-900"
+                  }`}
+                >
+                  {t}
+                </button>
+              ))}
+            </div>
+
+            {classes.length > 0 && requests.length > 0 && (
+              <div className="flex flex-wrap gap-2 mb-6">
+                <button
+                  onClick={() => setRequestClassTab("all")}
+                  className={`px-4 py-1.5 rounded-full text-[0.85rem] font-semibold transition-colors cursor-pointer border ${
+                    requestClassTab === "all" ? "bg-[#2563eb] text-white border-[#2563eb]" : "bg-white text-slate-600 border-slate-200 hover:bg-slate-50"
+                  }`}
+                >
+                  All Classes
+                </button>
+                {classes.map(cls => (
+                  <button
+                    key={cls.id}
+                    onClick={() => setRequestClassTab(cls.id)}
+                    className={`px-4 py-1.5 rounded-full text-[0.85rem] font-semibold transition-colors cursor-pointer border ${
+                      requestClassTab === cls.id ? "bg-[#2563eb] text-white border-[#2563eb]" : "bg-white text-slate-600 border-slate-200 hover:bg-slate-50"
+                    }`}
+                  >
+                    {cls.name}
+                  </button>
+                ))}
+              </div>
+            )}
+
+            {requests.filter(r => r.status === requestTab && (requestClassTab === "all" || r.class_id === requestClassTab)).length === 0 ? (
+              <EmptyState icon="✅" title={`No ${requestTab} requests`} desc={requestClassTab === "all" ? `Student join requests will appear here.` : `No ${requestTab} requests for this class.`} />
             ) : (
               <div className="flex flex-col gap-6">
-                {classes.map(cls => {
-                  const classReqs = requests.filter(r => r.class_id === cls.id);
+                {classes.filter(c => requestClassTab === "all" || c.id === requestClassTab).map(cls => {
+                  const classReqs = requests.filter(r => r.class_id === cls.id && r.status === requestTab);
                   if (classReqs.length === 0) return null;
                   return (
                     <div key={cls.id}>
@@ -351,7 +433,7 @@ export default function TeacherDashboard() {
                         <div className="w-1 h-5 rounded-full bg-[#2563eb]" />
                         <h3 className="text-[1rem] font-bold text-slate-900">{cls.name}</h3>
                         <span className="text-[0.75rem] bg-[#2563eb]/10 text-[#2563eb] border border-[#2563eb]/30 rounded-full py-0.5 px-2">
-                          {classReqs.filter(r => r.status === "pending").length} pending
+                          {classReqs.length} {requestTab}
                         </span>
                       </div>
                       <div className="flex flex-col gap-2.5">
@@ -385,39 +467,80 @@ export default function TeacherDashboard() {
             {loading ? (
               <div className="text-center py-20 text-slate-500 text-[0.9rem]">Loading exams...</div>
             ) : exams.length === 0 ? (
-              <EmptyState 
-                icon="📝" 
-                title="No exams yet" 
+              <EmptyState
+                icon="📝"
+                title="No exams yet"
                 desc="Create an exam blueprint and select syllabus documents to start."
                 action="Create Exam"
                 onAction={handleCreateExam}
               />
             ) : (
-              <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-5">
-                {exams.map(exam => (
-                  <div key={exam.id} className="bg-white border border-slate-200 rounded-xl p-5 hover:shadow-md transition-all">
-                    <div className="flex justify-between items-start mb-2">
-                      <h3 className="font-bold text-slate-900 line-clamp-1 pr-2">{exam.title}</h3>
-                      <div className="flex items-center gap-2 shrink-0">
-                        <span className="text-[0.7rem] bg-amber-100 text-amber-700 font-bold px-2 py-0.5 rounded-full uppercase">{exam.status}</span>
-                        <button onClick={() => handleDeleteExam(exam.id)} className="text-slate-400 hover:text-red-500 transition-colors" title="Delete Exam">
-                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /></svg>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {exams.map(exam => {
+                  const isPublished = exam.status === 'published';
+                  const isDraft = exam.status === 'draft';
+                  return (
+                    <div key={exam.id} className="group relative bg-white border border-slate-200 rounded-2xl overflow-hidden hover:shadow-xl hover:-translate-y-1 transition-all duration-300 flex flex-col">
+                      <div className={`h-1.5 w-full ${isPublished ? "bg-green-500" : "bg-[#2563eb]"}`} />
+                      <div className="p-5 flex-1 flex flex-col">
+                        <div className="flex justify-between items-start mb-1">
+                          <h3 className="font-bold text-[1.1rem] text-slate-900 line-clamp-1 pr-2 tracking-tight group-hover:text-[#2563eb] transition-colors">{exam.title}</h3>
+                          <button onClick={() => handleDeleteExam(exam.id)} className="text-slate-300 hover:text-red-500 transition-colors p-1 -mr-1" title="Delete Exam">
+                            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /></svg>
+                          </button>
+                        </div>
+                        
+                        <div className="flex items-center gap-2 mb-4">
+                          <span className={`text-[0.65rem] font-bold px-2 py-0.5 rounded-md uppercase tracking-wider ${
+                            isPublished ? "bg-green-100 text-green-700" : 
+                            isDraft ? "bg-slate-100 text-slate-600" : 
+                            "bg-amber-100 text-amber-700"
+                          }`}>
+                            {exam.status}
+                          </span>
+                          <span className="text-slate-400 text-[0.8rem]">•</span>
+                          <span className="text-slate-500 text-[0.85rem] font-medium truncate">{exam.class_name}</span>
+                        </div>
+                        
+                        <div className="grid grid-cols-3 gap-2 mb-6 mt-auto">
+                          <div className="bg-slate-50 rounded-lg p-2 text-center border border-slate-100">
+                            <div className="text-[0.65rem] text-slate-400 uppercase font-semibold tracking-wider mb-0.5">Marks</div>
+                            <div className="text-[0.9rem] font-bold text-slate-700">{exam.total_marks}</div>
+                          </div>
+                          <div className="bg-slate-50 rounded-lg p-2 text-center border border-slate-100">
+                            <div className="text-[0.65rem] text-slate-400 uppercase font-semibold tracking-wider mb-0.5">Time</div>
+                            <div className="text-[0.9rem] font-bold text-slate-700">{exam.duration_minutes}m</div>
+                          </div>
+                          <div className="bg-slate-50 rounded-lg p-2 text-center border border-slate-100">
+                            <div className="text-[0.65rem] text-slate-400 uppercase font-semibold tracking-wider mb-0.5">Level</div>
+                            <div className="text-[0.8rem] font-bold text-slate-700 capitalize mt-0.5">{exam.difficulty}</div>
+                          </div>
+                        </div>
+                        
+                        <button
+                          onClick={() => router.push(isPublished ? `/teacher/exams/${exam.id}/paper` : `/teacher/exams/${exam.id}/blueprint`)}
+                          className={`w-full py-2.5 rounded-xl text-[0.85rem] font-bold transition-all duration-200 cursor-pointer flex items-center justify-center gap-2 ${
+                            isPublished 
+                              ? "bg-green-50 hover:bg-green-100 text-green-700 border border-green-200" 
+                              : "bg-[#2563eb]/5 hover:bg-[#2563eb]/10 text-[#2563eb] border border-[#2563eb]/20"
+                          }`}
+                        >
+                          {isPublished ? (
+                            <>
+                              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"></path><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"></path></svg>
+                              View Approved Paper
+                            </>
+                          ) : (
+                            <>
+                              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+                              Edit Blueprint & Generate
+                            </>
+                          )}
                         </button>
                       </div>
                     </div>
-                    <p className="text-slate-500 text-[0.85rem] mb-4">Class: {exam.class_name}</p>
-                    <div className="flex justify-between text-[0.8rem] text-slate-600 mb-4">
-                      <span>{exam.total_marks} Marks</span>
-                      <span>{exam.duration_minutes} Mins</span>
-                      <span className="capitalize">{exam.difficulty}</span>
-                    </div>
-                    <button 
-                      onClick={() => router.push(exam.status === 'published' ? `/teacher/exams/${exam.id}/paper` : `/teacher/exams/${exam.id}/blueprint`)}
-                      className="w-full py-2 bg-slate-50 hover:bg-[#2563eb]/10 border border-slate-200 hover:border-[#2563eb]/30 text-slate-700 hover:text-[#2563eb] rounded-md text-[0.85rem] font-semibold transition-colors cursor-pointer mt-2">
-                      {exam.status === 'published' ? 'View Approved Paper' : 'Edit Blueprint & Generate'}
-                    </button>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </div>
@@ -436,34 +559,51 @@ export default function TeacherDashboard() {
             {loading ? (
               <div className="text-center py-20 text-slate-500 text-[0.9rem]">Loading exams...</div>
             ) : exams.length === 0 ? (
-              <EmptyState 
-                icon="📊" 
-                title="No exams yet" 
+              <EmptyState
+                icon="📊"
+                title="No exams yet"
                 desc="Create and publish exams to see results here."
                 action="Go to Exams"
                 onAction={() => setTab("exams")}
               />
             ) : (
-              <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-5">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                 {exams.filter(e => e.status === 'published').length === 0 ? (
                   <div className="col-span-full p-10 bg-slate-50 rounded-xl border border-slate-200 text-center">
                     <p className="text-slate-500 font-medium mb-2">No published exams yet.</p>
                     <p className="text-sm text-slate-400">Exams must be published before students can take them.</p>
                   </div>
                 ) : exams.filter(e => e.status === 'published').map(exam => (
-                  <div key={exam.id} className="bg-white border border-slate-200 rounded-xl p-5 hover:shadow-md transition-all">
-                    <div className="flex justify-between items-start mb-2">
-                      <h3 className="font-bold text-slate-900 line-clamp-1 pr-2">{exam.title}</h3>
+                  <div key={exam.id} className="group relative bg-white border border-slate-200 rounded-2xl overflow-hidden hover:shadow-xl hover:-translate-y-1 transition-all duration-300 flex flex-col">
+                    <div className="h-1.5 w-full bg-indigo-500" />
+                    <div className="p-5 flex-1 flex flex-col">
+                      <div className="flex justify-between items-start mb-1">
+                        <h3 className="font-bold text-[1.1rem] text-slate-900 line-clamp-1 pr-2 tracking-tight group-hover:text-indigo-600 transition-colors">{exam.title}</h3>
+                      </div>
+                      
+                      <div className="flex items-center gap-2 mb-4">
+                        <span className="text-[0.65rem] font-bold px-2 py-0.5 rounded-md uppercase tracking-wider bg-indigo-100 text-indigo-700">
+                          Published
+                        </span>
+                        <span className="text-slate-400 text-[0.8rem]">•</span>
+                        <span className="text-slate-500 text-[0.85rem] font-medium truncate">{exam.class_name}</span>
+                      </div>
+                      
+                      <div className="mb-6 mt-auto">
+                        <div className="bg-slate-50 rounded-lg p-3 flex justify-between items-center border border-slate-100">
+                          <div className="text-[0.7rem] text-slate-400 uppercase font-semibold tracking-wider">Total Marks</div>
+                          <div className="text-[1.1rem] font-bold text-slate-700">{exam.total_marks}</div>
+                        </div>
+                      </div>
+                      
+                      <button
+                        onClick={() => router.push(`/teacher/exams/${exam.id}/results`)}
+                        className="w-full py-2.5 rounded-xl text-[0.85rem] font-bold transition-all duration-200 cursor-pointer flex items-center justify-center gap-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200"
+                      >
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20v-6M6 20V10M18 20V4" /></svg>
+                        View Student Attempts
+                      </button>
                     </div>
-                    <p className="text-slate-500 text-[0.85rem] mb-4">Class: {exam.class_name}</p>
-                    <div className="flex justify-between text-[0.8rem] text-slate-600 mb-4">
-                      <span>{exam.total_marks} Marks</span>
-                    </div>
-                    <button 
-                      onClick={() => router.push(`/teacher/exams/${exam.id}/results`)}
-                      className="w-full py-2 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 hover:border-indigo-300 text-indigo-700 rounded-md text-[0.85rem] font-semibold transition-colors cursor-pointer mt-2">
-                      View Student Attempts
-                    </button>
                   </div>
                 ))}
               </div>
@@ -542,7 +682,8 @@ function ClassDetailView({
   onDeleteClass: () => void;
 }) {
   const [copied, setCopied] = useState<"code" | "link" | null>(null);
-  
+  const [showAllStudents, setShowAllStudents] = useState(false);
+
   const [syllabusList, setSyllabusList] = useState<SyllabusItem[]>([]);
   const [syllabusLoading, setSyllabusLoading] = useState(true);
   const [showSyllabusUpload, setShowSyllabusUpload] = useState(false);
@@ -642,8 +783,8 @@ function ClassDetailView({
                   </tr>
                 </thead>
                 <tbody>
-                  {students.map((s, i) => (
-                    <tr key={s.student_id} className={`hover:bg-slate-50 transition-colors ${i < students.length - 1 ? "border-b border-slate-100" : ""}`}>
+                  {(showAllStudents ? students : students.slice(0, 5)).map((s, i, arr) => (
+                    <tr key={s.student_id} className={`hover:bg-slate-50 transition-colors ${i < arr.length - 1 ? "border-b border-slate-100" : ""}`}>
                       <td className="p-3 px-4">
                         <div className="flex items-center gap-2.5">
                           <div className="w-8 h-8 rounded-full bg-[#2563eb]/10 border border-[#2563eb]/30 flex items-center justify-center text-[0.85rem] font-bold text-[#2563eb] shrink-0 font-[family-name:var(--font-geist-sans)]">
@@ -670,6 +811,16 @@ function ClassDetailView({
                   ))}
                 </tbody>
               </table>
+            )}
+            {!studentsLoading && students.length > 5 && (
+              <div className="p-3 border-t border-slate-200 bg-slate-50 flex justify-center">
+                <button
+                  onClick={() => setShowAllStudents(!showAllStudents)}
+                  className="text-[0.85rem] font-semibold text-[#2563eb] hover:text-[#1d4ed8] cursor-pointer hover:underline"
+                >
+                  {showAllStudents ? "Show less" : `View all ${students.length} students`}
+                </button>
+              </div>
             )}
           </div>
 
@@ -719,7 +870,7 @@ function ClassDetailView({
               </button>
             </div>
           </div>
-          
+
           <div className="mb-8">
             {syllabusLoading ? (
               <div className="bg-white border border-slate-200 rounded-xl p-8 text-center shadow-sm">
@@ -771,11 +922,10 @@ function ClassDetailView({
                         <button
                           onClick={() => viewSyllabus(s.id)}
                           disabled={!isPdf}
-                          className={`px-3.5 py-1.5 rounded-md border text-[0.8rem] font-semibold transition-colors ${
-                            isPdf 
-                              ? 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50 hover:border-slate-300' 
-                              : 'border-slate-100 bg-slate-50 text-slate-400 cursor-not-allowed'
-                          }`}
+                          className={`px-3.5 py-1.5 rounded-md border text-[0.8rem] font-semibold transition-colors ${isPdf
+                            ? 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50 hover:border-slate-300'
+                            : 'border-slate-100 bg-slate-50 text-slate-400 cursor-not-allowed'
+                            }`}
                         >
                           View PDF
                         </button>
@@ -853,9 +1003,9 @@ function ClassDetailView({
         </div>
       </div>
 
-      <SyllabusUploadModal 
-        isOpen={showSyllabusUpload} 
-        onClose={() => setShowSyllabusUpload(false)} 
+      <SyllabusUploadModal
+        isOpen={showSyllabusUpload}
+        onClose={() => setShowSyllabusUpload(false)}
         onSuccess={loadSyllabus}
         classId={cls.id}
       />

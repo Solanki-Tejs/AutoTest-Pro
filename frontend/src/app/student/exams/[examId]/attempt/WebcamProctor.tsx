@@ -19,10 +19,13 @@ export default function WebcamProctor({ examId, attemptId }: WebcamProctorProps)
   const CAPTURE_INTERVAL_MS = 1000; // 10 seconds
 
   useEffect(() => {
+    let activeStream: MediaStream | null = null;
+    
     // Start the webcam
     const startWebcam = async () => {
       try {
         const mediaStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+        activeStream = mediaStream;
         setStream(mediaStream);
         if (videoRef.current) {
           videoRef.current.srcObject = mediaStream;
@@ -37,6 +40,9 @@ export default function WebcamProctor({ examId, attemptId }: WebcamProctorProps)
 
     // Cleanup on unmount
     return () => {
+      if (activeStream) {
+        activeStream.getTracks().forEach(track => track.stop());
+      }
       if (videoRef.current && videoRef.current.srcObject) {
         const currentStream = videoRef.current.srcObject as MediaStream;
         currentStream.getTracks().forEach(track => track.stop());

@@ -127,8 +127,8 @@ export default function LiveExamPage() {
         const found = exams.find(e => e.id === examId);
 
         if (!found) throw new Error("Exam not found");
-        if (!found.attempt || found.attempt.status === "submitted") {
-          router.push(`/student/exams/${examId}/submitted`);
+        if (!found.attempt || found.attempt.status === "submitted" || found.attempt.status === "evaluated") {
+          router.replace(`/student/exams/${examId}/submitted`);
           return;
         }
 
@@ -241,7 +241,7 @@ export default function LiveExamPage() {
         answer: ans
       }));
       await submitExam(token, exam.id, answerArr);
-      router.push(`/student/exams/${exam.id}/submitted`);
+      router.replace(`/student/exams/${exam.id}/submitted`);
     } catch (err: any) {
       alert("Submission failed: " + err.message);
       setSubmitting(false);

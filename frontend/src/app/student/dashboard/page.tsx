@@ -20,6 +20,9 @@ export default function StudentDashboard() {
   const [user, setUser] = useState<UserResponse | null>(null);
   const [token, setToken] = useState<string | null>(null);
   const [tab, setTab] = useState<Tab>("join");
+
+  const [mounted, setMounted] = useState(false);
+  const [selectedClassId, setSelectedClassId] = useState<string | null>(null);
   const [selectedClass, setSelectedClass] = useState<Membership | null>(null);
 
   const [memberships, setMemberships] = useState<Membership[]>([]);
@@ -43,6 +46,39 @@ export default function StudentDashboard() {
     setUser(u);
     setToken(t);
   }, [router]);
+
+  useEffect(() => {
+    setMounted(true);
+    const savedTab = sessionStorage.getItem("studentDashTab") as Tab | null;
+    if (savedTab) setTab(savedTab);
+    const savedClassId = sessionStorage.getItem("studentDashClassId");
+    if (savedClassId) setSelectedClassId(savedClassId);
+  }, []);
+
+  useEffect(() => {
+    if (mounted) {
+      sessionStorage.setItem("studentDashTab", tab);
+    }
+  }, [tab, mounted]);
+
+  useEffect(() => {
+    if (selectedClassId && memberships.length > 0) {
+      const cls = memberships.find(m => String(m.class_id) === String(selectedClassId));
+      setSelectedClass(cls || null);
+    } else if (!selectedClassId) {
+      setSelectedClass(null);
+    }
+  }, [selectedClassId, memberships]);
+
+  function openClass(mem: Membership) {
+    setSelectedClassId(String(mem.class_id));
+    if (mounted) sessionStorage.setItem("studentDashClassId", String(mem.class_id));
+  }
+
+  function closeClass() {
+    setSelectedClassId(null);
+    if (mounted) sessionStorage.removeItem("studentDashClassId");
+  }
 
   const loadMemberships = useCallback(async () => {
     if (!token) return;
@@ -98,6 +134,8 @@ export default function StudentDashboard() {
   }
 
   function handleLogout() {
+    sessionStorage.removeItem("studentDashTab");
+    sessionStorage.removeItem("studentDashClassId");
     logout();
     router.push("/student/login");
   }
@@ -151,9 +189,8 @@ export default function StudentDashboard() {
                 key={t}
                 id={`tab-${t}`}
                 onClick={() => setTab(t)}
-                className={`w-full flex items-center gap-2.5 py-2.5 px-3 rounded-md border-none text-[0.88rem] mb-1 transition-all duration-200 text-left cursor-pointer ${
-                  active ? "bg-[#6c63ff]/10 text-[#6c63ff] font-semibold" : "bg-transparent text-slate-500 font-normal hover:bg-slate-50 hover:text-slate-900"
-                }`}
+                className={`w-full flex items-center gap-2.5 py-2.5 px-3 rounded-md border-none text-[0.88rem] mb-1 transition-all duration-200 text-left cursor-pointer ${active ? "bg-[#6c63ff]/10 text-[#6c63ff] font-semibold" : "bg-transparent text-slate-500 font-normal hover:bg-slate-50 hover:text-slate-900"
+                  }`}
               >
                 {icons[t]}
                 {labels[t]}
@@ -210,9 +247,8 @@ export default function StudentDashboard() {
                     id="btn-lookup-code"
                     type="submit"
                     disabled={previewLoading || !codeInput.trim()}
-                    className={`px-5 py-3 rounded-md border-none text-white text-[0.9rem] font-semibold transition-all duration-200 whitespace-nowrap ${
-                      previewLoading || !codeInput.trim() ? "bg-[#6c63ff]/50 cursor-not-allowed" : "bg-[#6c63ff] hover:bg-[#5a52d5] cursor-pointer shadow-sm"
-                    }`}
+                    className={`px-5 py-3 rounded-md border-none text-white text-[0.9rem] font-semibold transition-all duration-200 whitespace-nowrap ${previewLoading || !codeInput.trim() ? "bg-[#6c63ff]/50 cursor-not-allowed" : "bg-[#6c63ff] hover:bg-[#5a52d5] cursor-pointer shadow-sm"
+                      }`}
                   >
                     {previewLoading ? "Looking up…" : "Look up"}
                   </button>
@@ -227,11 +263,10 @@ export default function StudentDashboard() {
 
               {/* Join result message */}
               {joinResult && (
-                <div className={`mt-4 px-4 py-3 border rounded-md text-[0.88rem] font-medium ${
-                  joinResult.type === "success" ? "bg-green-50 border-green-200 text-green-700" :
-                  joinResult.type === "info" ? "bg-indigo-50 border-indigo-200 text-indigo-700" :
-                  "bg-red-50 border-red-200 text-red-600"
-                }`}>
+                <div className={`mt-4 px-4 py-3 border rounded-md text-[0.88rem] font-medium ${joinResult.type === "success" ? "bg-green-50 border-green-200 text-green-700" :
+                    joinResult.type === "info" ? "bg-indigo-50 border-indigo-200 text-indigo-700" :
+                      "bg-red-50 border-red-200 text-red-600"
+                  }`}>
                   {joinResult.type === "success" && "✅ "}{joinResult.msg}
                 </div>
               )}
@@ -256,9 +291,8 @@ export default function StudentDashboard() {
                   </div>
 
                   {alreadyInClass ? (
-                    <div className={`py-2.5 px-4 border rounded-md text-[0.85rem] font-semibold text-center ${
-                      alreadyInClass.status === "approved" ? "bg-green-50 border-green-200 text-green-700" : "bg-amber-50 border-amber-200 text-amber-700"
-                    }`}>
+                    <div className={`py-2.5 px-4 border rounded-md text-[0.85rem] font-semibold text-center ${alreadyInClass.status === "approved" ? "bg-green-50 border-green-200 text-green-700" : "bg-amber-50 border-amber-200 text-amber-700"
+                      }`}>
                       {alreadyInClass.status === "approved" ? "✅ You are already enrolled in this class" : "⏳ Your join request is pending approval"}
                     </div>
                   ) : (
@@ -266,9 +300,8 @@ export default function StudentDashboard() {
                       id="btn-confirm-join"
                       onClick={handleJoin}
                       disabled={joinLoading}
-                      className={`w-full py-3 rounded-md border-none text-white text-[0.95rem] font-semibold transition-all duration-200 ${
-                        joinLoading ? "bg-[#6c63ff]/60 cursor-not-allowed" : "bg-[#6c63ff] hover:bg-[#5a52d5] cursor-pointer shadow-sm"
-                      }`}
+                      className={`w-full py-3 rounded-md border-none text-white text-[0.95rem] font-semibold transition-all duration-200 ${joinLoading ? "bg-[#6c63ff]/60 cursor-not-allowed" : "bg-[#6c63ff] hover:bg-[#5a52d5] cursor-pointer shadow-sm"
+                        }`}
                     >
                       {joinLoading ? "Sending request…" : "Request to Join"}
                     </button>
@@ -291,7 +324,7 @@ export default function StudentDashboard() {
 
         {/* ── My Classes Tab ── */}
         {tab === "my-classes" && selectedClass ? (
-          <StudentClassDetailView m={selectedClass} onBack={() => setSelectedClass(null)} token={token!} />
+          <StudentClassDetailView m={selectedClass} onBack={closeClass} token={token!} />
         ) : tab === "my-classes" && (
           <div className="animate-fade-up">
             <div className="mb-8">
@@ -316,7 +349,7 @@ export default function StudentDashboard() {
                   <>
                     <SectionLabel label="Enrolled" color="text-green-600" bg="bg-green-600" />
                     <div className="grid grid-cols-[repeat(auto-fill,minmax(300px,1fr))] gap-5 mb-8">
-                      {approvedClasses.map((m, i) => <MembershipCard key={m.id} m={m} delay={i * 0.07} onSelect={() => setSelectedClass(m)} />)}
+                      {approvedClasses.map((m, i) => <MembershipCard key={m.id} m={m} delay={i * 0.07} onSelect={() => openClass(m)} />)}
                     </div>
                   </>
                 )}
@@ -390,9 +423,8 @@ function MembershipCard({ m, delay, onSelect }: { m: Membership; delay: number; 
   return (
     <div
       onClick={isApproved && onSelect ? onSelect : undefined}
-      className={`animate-fade-up bg-white border border-slate-200 rounded-xl p-6 relative overflow-hidden shadow-sm transition-all duration-200 ${
-        isApproved && onSelect ? "hover:shadow-md hover:border-green-300 cursor-pointer" : "hover:shadow-md"
-      }`}
+      className={`animate-fade-up bg-white border border-slate-200 rounded-xl p-6 relative overflow-hidden shadow-sm transition-all duration-200 ${isApproved && onSelect ? "hover:shadow-md hover:border-green-300 cursor-pointer" : "hover:shadow-md"
+        }`}
       style={{ animationDelay: `${delay}s` }}
     >
       <div className={`absolute top-0 left-0 bottom-0 w-1 ${statusColors.bg} rounded-l-md`} />
@@ -431,7 +463,7 @@ function StudentClassDetailView({ m, onBack, token }: { m: Membership; onBack: (
     setLoading(true);
     fetchSyllabusList(m.class_id)
       .then(setSyllabusList)
-      .catch(() => {})
+      .catch(() => { })
       .finally(() => setLoading(false));
   }, [m.class_id]);
 
@@ -439,7 +471,7 @@ function StudentClassDetailView({ m, onBack, token }: { m: Membership; onBack: (
     setExamsLoading(true);
     getAllStudentExams(token)
       .then((data) => setExamList(data.filter(e => e.class_id === m.class_id)))
-      .catch(() => {})
+      .catch(() => { })
       .finally(() => setExamsLoading(false));
   }, [token, m.class_id]);
 
@@ -470,17 +502,15 @@ function StudentClassDetailView({ m, onBack, token }: { m: Membership; onBack: (
       <div className="mb-6 flex items-center gap-6 border-b border-slate-200">
         <button
           onClick={() => setActiveTab("syllabus")}
-          className={`py-3 px-1 font-bold text-[0.95rem] border-b-2 transition-colors ${
-            activeTab === "syllabus" ? "border-green-500 text-green-700" : "border-transparent text-slate-500 hover:text-slate-700"
-          }`}
+          className={`py-3 px-1 font-bold text-[0.95rem] border-b-2 transition-colors ${activeTab === "syllabus" ? "border-green-500 text-green-700" : "border-transparent text-slate-500 hover:text-slate-700"
+            }`}
         >
           Syllabus
         </button>
         <button
           onClick={() => setActiveTab("exams")}
-          className={`py-3 px-1 font-bold text-[0.95rem] border-b-2 transition-colors ${
-            activeTab === "exams" ? "border-blue-500 text-blue-700" : "border-transparent text-slate-500 hover:text-slate-700"
-          }`}
+          className={`py-3 px-1 font-bold text-[0.95rem] border-b-2 transition-colors ${activeTab === "exams" ? "border-blue-500 text-blue-700" : "border-transparent text-slate-500 hover:text-slate-700"
+            }`}
         >
           Exams
         </button>
@@ -546,11 +576,10 @@ function StudentClassDetailView({ m, onBack, token }: { m: Membership; onBack: (
                       <button
                         onClick={() => viewSyllabus(s.id)}
                         disabled={!isPdf}
-                        className={`px-3.5 py-1.5 rounded-md border text-[0.8rem] font-semibold transition-colors ${
-                          isPdf 
-                            ? 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50 hover:border-slate-300' 
+                        className={`px-3.5 py-1.5 rounded-md border text-[0.8rem] font-semibold transition-colors ${isPdf
+                            ? 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50 hover:border-slate-300'
                             : 'border-slate-100 bg-slate-50 text-slate-400 cursor-not-allowed'
-                        }`}
+                          }`}
                       >
                         View PDF
                       </button>
@@ -606,15 +635,15 @@ function StudentClassDetailView({ m, onBack, token }: { m: Membership; onBack: (
                 const etStr = exam.end_time ? (exam.end_time.match(/(Z|[+-]\d{2}(:\d{2})?)$/) ? exam.end_time : exam.end_time + 'Z') : null;
                 const startTime = stStr ? new Date(stStr) : null;
                 const endTime = etStr ? new Date(etStr) : null;
-                
+
                 let statusInfo = { label: "Available", color: "bg-blue-100 text-blue-700", actionText: "Take Exam", actionDisabled: true, href: `/student/exams/${exam.id}` };
-                
+
                 if (exam.attempt) {
-                   if (exam.attempt.status === 'submitted' || exam.attempt.status === 'evaluated') {
-                     statusInfo = { label: "Submitted", color: "bg-green-100 text-green-700", actionText: "View Result", actionDisabled: false, href: `/student/exams/${exam.id}/submitted` };
-                   } else {
-                     statusInfo = { label: "In Progress", color: "bg-amber-100 text-amber-700", actionText: "Resume Exam", actionDisabled: false, href: `/student/exams/${exam.id}/attempt` };
-                   }
+                  if (exam.attempt.status === 'submitted' || exam.attempt.status === 'evaluated') {
+                    statusInfo = { label: "Submitted", color: "bg-green-100 text-green-700", actionText: "View Result", actionDisabled: false, href: `/student/exams/${exam.id}/submitted` };
+                  } else {
+                    statusInfo = { label: "In Progress", color: "bg-amber-100 text-amber-700", actionText: "Resume Exam", actionDisabled: false, href: `/student/exams/${exam.id}/attempt` };
+                  }
                 } else if (startTime && endTime) {
                   if (now < startTime) {
                     statusInfo = { label: "Upcoming", color: "bg-indigo-100 text-indigo-700", actionText: "Starts soon", actionDisabled: true, href: "#" };
@@ -633,13 +662,13 @@ function StudentClassDetailView({ m, onBack, token }: { m: Membership; onBack: (
                         {statusInfo.label}
                       </span>
                     </div>
-                    
+
                     <div className="flex flex-wrap gap-x-4 gap-y-2 text-[0.85rem] text-slate-600 mb-4">
                       <div className="flex items-center gap-1.5"><span className="font-semibold text-slate-700">Marks:</span> {exam.total_marks}</div>
                       <div className="flex items-center gap-1.5"><span className="font-semibold text-slate-700">Duration:</span> {exam.duration_minutes} min</div>
                       <div className="flex items-center gap-1.5"><span className="font-semibold text-slate-700">Level:</span> <span className="capitalize">{exam.difficulty}</span></div>
                     </div>
-                    
+
                     {(startTime && endTime) && (
                       <div className="bg-slate-50 rounded-lg p-3 text-[0.8rem] text-slate-600 mb-5 border border-slate-100 flex-grow">
                         <div className="flex items-center gap-2 mb-1">
@@ -652,14 +681,13 @@ function StudentClassDetailView({ m, onBack, token }: { m: Membership; onBack: (
                         </div>
                       </div>
                     )}
-                    
-                    <a 
+
+                    <a
                       href={statusInfo.href}
-                      className={`w-full py-2.5 rounded-lg font-bold text-[0.9rem] transition-colors mt-auto text-center block ${
-                        statusInfo.actionDisabled === false
+                      className={`w-full py-2.5 rounded-lg font-bold text-[0.9rem] transition-colors mt-auto text-center block ${statusInfo.actionDisabled === false
                           ? "bg-[#2563eb] hover:bg-[#1d4ed8] text-white cursor-pointer"
                           : "bg-slate-100 text-slate-400 pointer-events-none border border-slate-200"
-                      }`}
+                        }`}
                     >
                       {statusInfo.actionText}
                     </a>

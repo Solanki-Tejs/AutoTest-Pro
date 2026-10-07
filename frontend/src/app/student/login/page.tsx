@@ -4,7 +4,7 @@ import { useState, FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import AuthCard from "@/app/components/AuthCard";
-import { loginUser } from "@/app/lib/auth";
+import { loginUser, logout } from "@/app/lib/auth";
 
 export default function StudentLoginPage() {
   const router = useRouter();
@@ -19,7 +19,11 @@ export default function StudentLoginPage() {
     setError(null);
     setLoading(true);
     try {
-      await loginUser(email.trim().toLowerCase(), password);
+      const res = await loginUser(email.trim().toLowerCase(), password);
+      if (res.user.role !== "student") {
+        logout();
+        throw new Error("Incorrect email or password.");
+      }
       router.push("/student/dashboard");
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Something went wrong.");
@@ -128,6 +132,16 @@ export default function StudentLoginPage() {
         >
           Create account
         </Link>
+        
+        {/* Switch role link */}
+        <div className="mt-6 flex justify-center">
+          <Link 
+            href="/teacher/login" 
+            className="font-mono text-[0.7rem] uppercase tracking-widest text-graphite/50 hover:text-graphite transition-colors underline decoration-graphite/30 underline-offset-4"
+          >
+            I am a teacher instead
+          </Link>
+        </div>
       </div>
     </AuthCard>
   );

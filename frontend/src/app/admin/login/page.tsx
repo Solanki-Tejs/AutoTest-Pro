@@ -6,7 +6,7 @@ import Link from "next/link";
 import AuthCard from "@/app/components/AuthCard";
 import { loginUser, logout } from "@/app/lib/auth";
 
-export default function TeacherLoginPage() {
+export default function AdminLoginPage() {
   const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -20,11 +20,11 @@ export default function TeacherLoginPage() {
     setLoading(true);
     try {
       const res = await loginUser(email.trim().toLowerCase(), password);
-      if (res.user.role !== "teacher") {
+      if (res.user.role !== "admin") {
         logout();
-        throw new Error("Incorrect email or password.");
+        throw new Error("Access denied. Admin role required.");
       }
-      router.push("/teacher/dashboard");
+      router.push("/admin/settings");
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Something went wrong.");
     } finally {
@@ -38,10 +38,10 @@ export default function TeacherLoginPage() {
         {/* Header */}
         <div className="mb-12">
           <h1 className="font-serif text-3xl text-graphite mb-4">
-            System Access
+            Admin Access
           </h1>
           <p className="font-sans text-graphite/60 text-sm leading-relaxed max-w-sm">
-            Enter your credentials to access the educator portal.
+            Enter your credentials to access the admin portal.
           </p>
         </div>
 
@@ -57,41 +57,38 @@ export default function TeacherLoginPage() {
         <form onSubmit={handleSubmit} noValidate className="flex flex-col gap-6">
           {/* Email */}
           <div>
-            <label htmlFor="teacher-login-email" className="block font-mono text-xs uppercase tracking-widest text-graphite/60 mb-2">
+            <label htmlFor="admin-login-email" className="block font-mono text-xs uppercase tracking-widest text-graphite/60 mb-2">
               Email address
             </label>
             <input
-              id="teacher-login-email"
+              id="admin-login-email"
               type="email"
               required
               autoComplete="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              placeholder="you@school.edu"
-              className="w-full h-12 px-0 bg-transparent border-b border-grid text-graphite font-sans text-base outline-none transition-colors focus:border-teacher focus:ring-0 placeholder:text-graphite/30"
+              placeholder="admin@autotest.com"
+              className="w-full h-12 px-0 bg-transparent border-b border-grid text-graphite font-sans text-base outline-none transition-colors focus:border-graphite focus:ring-0 placeholder:text-graphite/30"
             />
           </div>
 
           {/* Password */}
           <div>
             <div className="flex justify-between items-end mb-2">
-              <label htmlFor="teacher-login-password" className="block font-mono text-xs uppercase tracking-widest text-graphite/60">
+              <label htmlFor="admin-login-password" className="block font-mono text-xs uppercase tracking-widest text-graphite/60">
                 Password
               </label>
-              <Link href="#" className="font-mono text-[0.65rem] uppercase tracking-widest text-teacher no-underline hover:underline">
-                Forgot?
-              </Link>
             </div>
             <div className="relative">
               <input
-                id="teacher-login-password"
+                id="admin-login-password"
                 type={showPassword ? "text" : "password"}
                 required
                 autoComplete="current-password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder="••••••••"
-                className="w-full h-12 px-0 bg-transparent border-b border-grid text-graphite font-sans text-base outline-none transition-colors focus:border-teacher focus:ring-0 placeholder:text-graphite/30"
+                className="w-full h-12 px-0 bg-transparent border-b border-grid text-graphite font-sans text-base outline-none transition-colors focus:border-graphite focus:ring-0 placeholder:text-graphite/30"
               />
               <button
                 type="button"
@@ -109,7 +106,7 @@ export default function TeacherLoginPage() {
             disabled={loading}
             className={`mt-8 w-full h-14 flex items-center justify-between px-6 font-mono text-xs uppercase tracking-widest transition-all duration-300 ${loading
                 ? "bg-grid text-graphite/40 cursor-not-allowed"
-                : "bg-graphite text-white hover:bg-teacher hover:pl-8 cursor-pointer"
+                : "bg-graphite text-white hover:bg-black hover:pl-8 cursor-pointer"
               }`}
           >
             <span>{loading ? "Authenticating…" : "Authenticate"}</span>
@@ -124,18 +121,17 @@ export default function TeacherLoginPage() {
           <div className="flex-1 h-px bg-grid" />
         </div>
 
-        {/* Register link */}
-        <Link
-          href="/teacher/register"
-          className="flex items-center justify-center h-14 border border-grid font-mono text-xs uppercase tracking-widest text-graphite hover:bg-teacher/5 hover:border-teacher hover:text-teacher transition-colors no-underline"
-        >
-          Create account
-        </Link>
         {/* Switch role link */}
-        <div className="mt-6 flex justify-center">
+        <div className="mt-6 flex justify-center flex-col gap-3">
+          <Link
+            href="/teacher/login"
+            className="text-center font-mono text-[0.7rem] uppercase tracking-widest text-graphite/50 hover:text-graphite transition-colors underline decoration-graphite/30 underline-offset-4"
+          >
+            I am an educator instead
+          </Link>
           <Link
             href="/student/login"
-            className="font-mono text-[0.7rem] uppercase tracking-widest text-graphite/50 hover:text-graphite transition-colors underline decoration-graphite/30 underline-offset-4"
+            className="text-center font-mono text-[0.7rem] uppercase tracking-widest text-graphite/50 hover:text-graphite transition-colors underline decoration-graphite/30 underline-offset-4"
           >
             I am a student instead
           </Link>

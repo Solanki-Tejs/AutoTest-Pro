@@ -140,6 +140,15 @@ export default function BrowserSecurity({ examId, attemptId }: BrowserSecurityPr
     };
   }, [settings, isStarted, reportViolation]);
 
+  // Exit fullscreen when component unmounts (exam ends or submitted)
+  useEffect(() => {
+    return () => {
+      if (document.fullscreenElement) {
+        document.exitFullscreen().catch(err => console.error("Error exiting fullscreen:", err));
+      }
+    };
+  }, []);
+
   const enterFullscreen = async () => {
     try {
       if (document.documentElement.requestFullscreen) {

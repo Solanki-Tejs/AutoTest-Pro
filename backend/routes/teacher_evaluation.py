@@ -24,13 +24,29 @@ def get_teacher_exam_attempts(exam_id: str, db: Session = Depends(get_db), curre
         raise HTTPException(status_code=403, detail="Not authorized")
         
     query = text("""
-        SELECT a.id, a.student_id, u.email as student_email, a.started_at, a.completed_at, a.status, a.total_marks, a.max_marks
+        SELECT a.id, a.student_id, u.email as student_email, a.started_at, a.completed_at, a.status, a.total_marks, a.max_marks, a.adjustment_marks
         FROM exam_attempts a
         JOIN users u ON a.student_id = u.id
         WHERE a.exam_id = :exam_id
     """)
     result = db.execute(query, {"exam_id": exam_id}).mappings().all()
-    return [dict(row) for row in result]
+    attempts = [dict(row) for row in result]
+    
+    # Fetch cheating summaries from MongoDB
+    mongo_db = get_mongo_db()
+    proctoring_docs = mongo_db.proctoring_events.find({"exam_id": exam_id})
+    proctoring_map = {}
+    for doc in proctoring_docs:
+        events = doc.get("events", [])
+        proctoring_map[doc["attempt_id"]] = {
+            "violation_count": len(events),
+            "events": events
+        }
+        
+    for a in attempts:
+        a["cheating_summary"] = proctoring_map.get(str(a["id"]), {"violation_count": 0, "events": []})
+        
+    return attempts
 
 @router.get("/attempts/{attempt_id}/evaluation")
 def get_attempt_evaluation(attempt_id: str, db: Session = Depends(get_db), current_user: dict = Depends(require_roles("teacher"))):
@@ -133,6 +149,27 @@ def override_marks(attempt_id: str, question_id: str, payload: OverrideRequest, 
         db.commit()
         
     return {"status": "success", "new_total": new_total}
+
+class GlobalMarksRequest(BaseModel):
+    adjustment: float
+
+@router.patch("/attempts/{attempt_id}/global_marks")
+def update_global_marks(attempt_id: str, payload: GlobalMarksRequest, db: Session = Depends(get_db), current_user: dict = Depends(require_roles("teacher"))):
+    user_id = int(current_user["sub"])
+    auth_query = text("""
+        SELECT 1 FROM exam_attempts a 
+        JOIN exams e ON a.exam_id = e.id 
+        JOIN classes c ON e.class_id = c.id 
+        WHERE a.id = :attempt_id AND c.teacher_id = :teacher_id
+    """)
+    if not db.execute(auth_query, {"attempt_id": attempt_id, "teacher_id": user_id}).first():
+        raise HTTPException(status_code=403, detail="Not authorized")
+        
+    update_query = text("UPDATE exam_attempts SET adjustment_marks = :adj WHERE id = :attempt_id")
+    db.execute(update_query, {"adj": payload.adjustment, "attempt_id": attempt_id})
+    db.commit()
+    
+    return {"status": "success", "adjustment_marks": payload.adjustment}
 
 @router.post("/attempts/{attempt_id}/review/approve")
 def approve_review(attempt_id: str, db: Session = Depends(get_db), current_user: dict = Depends(require_roles("teacher"))):

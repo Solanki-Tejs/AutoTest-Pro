@@ -215,6 +215,70 @@ export default function AnswersPage() {
     }
   }
 
+  async function handleDownloadPDF() {
+    const element = document.getElementById('answers-container');
+    if (!element) return;
+    
+    const oldCursor = document.body.style.cursor;
+    document.body.style.cursor = 'wait';
+
+    try {
+      // @ts-ignore
+      const domtoimage = (await import('dom-to-image-more')).default;
+      const { jsPDF } = await import('jspdf');
+
+      const blocks = element.querySelectorAll('.pdf-block');
+      const pdf = new jsPDF('p', 'mm', 'a4');
+      const pageWidth = pdf.internal.pageSize.getWidth();
+      const pageHeight = pdf.internal.pageSize.getHeight();
+      const margin = 15;
+      const usableWidth = pageWidth - 2 * margin;
+      
+      let currentY = margin;
+      const scale = 2; // For higher resolution text
+
+      for (let i = 0; i < blocks.length; i++) {
+        const block = blocks[i] as HTMLElement;
+        
+        // Skip empty blocks
+        if (block.clientHeight === 0) continue;
+
+        const dataUrl = await domtoimage.toPng(block, {
+          quality: 1,
+          bgcolor: '#ffffff',
+          width: block.clientWidth * scale,
+          height: block.clientHeight * scale,
+          style: {
+            transform: `scale(${scale})`,
+            transformOrigin: 'top left',
+            width: `${block.clientWidth}px`,
+            height: `${block.clientHeight}px`,
+            margin: '0' // Remove external margins for cleaner snapshots
+          }
+        });
+
+        // Calculate height proportionally for the PDF page width
+        const imgHeight = (block.clientHeight * usableWidth) / block.clientWidth;
+        
+        // Page break if it exceeds page height
+        if (currentY + imgHeight > pageHeight - margin && currentY > margin) {
+          pdf.addPage();
+          currentY = margin;
+        }
+        
+        pdf.addImage(dataUrl, 'PNG', margin, currentY, usableWidth, imgHeight);
+        currentY += imgHeight + 6; // 6mm gap between blocks
+      }
+
+      pdf.save(`${exam?.title || 'Exam'}_Answers.pdf`);
+    } catch (e) {
+      console.error("PDF generation failed", e);
+      alert("Failed to generate PDF automatically.");
+    } finally {
+      document.body.style.cursor = oldCursor;
+    }
+  }
+
   if (loading) {
     return (
       <div className="min-h-screen bg-slate-50 flex items-center justify-center p-6">
@@ -271,6 +335,13 @@ export default function AnswersPage() {
 
         {answerBank && !generating && (
           <div className="flex items-center gap-3">
+            <button
+              onClick={handleDownloadPDF}
+              className="px-4 py-2 bg-white hover:bg-slate-50 border border-slate-300 text-slate-700 text-[0.9rem] font-bold rounded-md shadow-sm transition-colors flex items-center gap-2"
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg>
+              Download PDF
+            </button>
             <div className="relative group">
               <button
                 disabled={isPublished}
@@ -342,9 +413,9 @@ export default function AnswersPage() {
         </div>
       )}
 
-      <div className="max-w-4xl mx-auto px-6 py-8">
+      <div className="max-w-[850px] mx-auto px-6 py-8 print:p-0">
         {error && (
-          <div className="p-4 bg-red-50 border border-red-200 rounded-lg text-red-700 mb-8 flex items-start gap-3">
+          <div className="p-4 bg-red-50 border border-red-200 rounded-lg text-red-700 mb-8 flex items-start gap-3 print:hidden">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="mt-0.5 shrink-0"><circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" /></svg>
             <div>
               <p className="font-bold mb-1">Generation Error</p>
@@ -355,7 +426,7 @@ export default function AnswersPage() {
 
         {!answerBank ? (
           !generating && (
-            <div className="text-center py-20 bg-white border border-slate-200 rounded-2xl shadow-sm">
+            <div className="text-center py-20 bg-white border border-slate-200 rounded-2xl shadow-sm print:hidden">
               <div className="w-16 h-16 bg-slate-100 text-slate-400 rounded-full flex items-center justify-center mx-auto mb-4">
                 <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /><line x1="16" y1="13" x2="8" y2="13" /><line x1="16" y1="17" x2="8" y2="17" /><polyline points="10 9 9 9 8 9" /></svg>
               </div>
@@ -370,41 +441,50 @@ export default function AnswersPage() {
             </div>
           )
         ) : (
-          <div className="flex flex-col gap-10">
-            {paper.question_body.sections.map((section) => (
-              <div key={section.sectionNo} className="animate-fade-up">
-                {paper.question_body.sections.length > 1 && (
-                  <h3 className="font-bold text-xl text-slate-900 mb-6 pb-2 border-b border-slate-200">
-                    Section {section.sectionNo}: {section.sectionName}
-                  </h3>
-                )}
+          <div id="answers-container" className="bg-white shadow-xl mx-auto border border-slate-200 min-h-[1100px] p-12 sm:p-16 font-serif text-black print:shadow-none print:border-none print:p-0 print:max-w-none print:w-full">
+            <div className="text-center mb-10 pdf-block">
+              <h1 className="text-xl sm:text-2xl font-bold uppercase mb-2">ANSWER KEY</h1>
+              <div className="text-lg mb-1">{exam.class_name}</div>
+              <div className="text-md uppercase underline mb-6">{exam.title}</div>
+            </div>
 
-                {section.questions.length === 0 ? (
-                  <div className="text-center text-slate-500 italic text-sm">No questions in this section.</div>
-                ) : (
-                  <div className="flex flex-col gap-6">
-                    {section.questions.map((q) => {
-                      const ans = answerBank.answer_body.find(a => a.question_id === q.question_id);
-                      return (
-                        <EditableAnswerCard
-                          key={q.question_id}
-                          question={q}
-                          answer={ans}
-                          isRegenerating={regeneratingIds.has(ans?.answer_id || "")}
-                          disabled={isPublished}
-                          onSave={async (updates) => {
-                            if (ans) await handleEditSave(ans.answer_id, updates);
-                          }}
-                          onRegenerate={async () => {
-                            if (ans) await handleRegenerateAnswer(ans.answer_id);
-                          }}
-                        />
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-            ))}
+            <div className="flex flex-col gap-8 mt-8">
+              {paper.question_body.sections.map((section) => (
+                <div key={section.sectionNo} className="animate-fade-up break-inside-avoid">
+                  {paper.question_body.sections.length > 1 && (
+                    <div className="text-center font-bold text-lg mb-6 underline pdf-block py-2">
+                      Section {section.sectionNo}: {section.sectionName}
+                    </div>
+                  )}
+
+                  {section.questions.length === 0 ? (
+                    <div className="text-center text-slate-500 italic text-sm">No questions in this section.</div>
+                  ) : (
+                    <div className="flex flex-col gap-6">
+                      {section.questions.map((q) => {
+                        const ans = answerBank.answer_body.find(a => a.question_id === q.question_id);
+                        return (
+                          <div key={q.question_id} className="pdf-block w-full bg-white">
+                            <EditableAnswerCard
+                              question={q}
+                              answer={ans}
+                              isRegenerating={regeneratingIds.has(ans?.answer_id || "")}
+                              disabled={isPublished}
+                              onSave={async (updates) => {
+                                if (ans) await handleEditSave(ans.answer_id, updates);
+                              }}
+                              onRegenerate={async () => {
+                                if (ans) await handleRegenerateAnswer(ans.answer_id);
+                              }}
+                            />
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
           </div>
         )}
       </div>
