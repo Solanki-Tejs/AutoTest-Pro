@@ -118,17 +118,65 @@ from schemas.auth import (
     LoginResponse,
     RegisterRequest,
     UserResponse,
+    SendOtpRequest,
+    VerifyOtpRequest,
+    ForgotPasswordRequest,
+    UpdatePasswordRequest,
 )
 
 from services.auth_service import (
     create_user,
     authenticate_user,
+    get_user_by_email,
+    update_password_by_email,
+    update_password_by_id,
 )
+from services.otp_service import generate_and_send_otp, verify_otp
+from core.security import verify_password
 
 from databases.database import get_db
 
 
 router = APIRouter()
+
+@router.post("/send-otp")
+async def send_otp(
+    data: SendOtpRequest,
+    db: Session = Depends(get_db),
+):
+    email = data.email.lower().strip()
+    existing_user = get_user_by_email(email, db)
+
+    norm_purpose = "register" if data.purpose in ("register", "registration") else data.purpose
+    if norm_purpose == "register" and existing_user:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Email is already registered. Please log in instead.",
+        )
+
+    if data.purpose in ("forgot_password", "update_password") and not existing_user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No account found with this email address.",
+        )
+
+    result = generate_and_send_otp(email, data.purpose, db)
+    return {"message": "Verification code sent to your email address.", "email": email}
+
+
+@router.post("/verify-otp")
+async def verify_otp_endpoint(
+    data: VerifyOtpRequest,
+    db: Session = Depends(get_db),
+):
+    is_valid = verify_otp(data.email, data.otp, data.purpose, db, consume=False)
+    if not is_valid:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid or expired verification code.",
+        )
+    return {"valid": True, "message": "Verification code is valid."}
+
 
 @router.post(
     "/register",
@@ -139,6 +187,15 @@ async def register(
     data: RegisterRequest,
     db: Session = Depends(get_db),
 ):
+    # Enforce OTP verification if provided or check if required
+    if data.otp:
+        is_valid = verify_otp(data.email, data.otp, "register", db, consume=True)
+        if not is_valid:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid or expired verification code. Please request a new code.",
+            )
+
     try:
         user = create_user(data, db)
 
@@ -163,6 +220,69 @@ async def register(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to create user",
         )
+
+
+@router.post("/forgot-password")
+async def forgot_password(
+    data: ForgotPasswordRequest,
+    db: Session = Depends(get_db),
+):
+    email = data.email.lower().strip()
+    is_valid = verify_otp(email, data.otp, "forgot_password", db, consume=True)
+    if not is_valid:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid or expired verification code.",
+        )
+
+    success = update_password_by_email(email, data.new_password, db)
+    if not success:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found",
+        )
+
+    return {"message": "Password updated successfully. You can now log in with your new password."}
+
+
+@router.post("/update-password")
+async def update_password(
+    data: UpdatePasswordRequest,
+    current_user=Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    user_id = int(current_user["sub"])
+    email = current_user["email"]
+
+    if data.otp:
+        is_valid = verify_otp(email, data.otp, "update_password", db, consume=True)
+        if not is_valid:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid or expired verification code.",
+            )
+    elif data.old_password:
+        user = get_user_by_email(email, db)
+        if not user or not verify_password(data.old_password, user["password_hash"]):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Current password is incorrect.",
+            )
+    else:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Either a verification code or current password is required to change password.",
+        )
+
+    success = update_password_by_id(user_id, data.new_password, db)
+    if not success:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to update password",
+        )
+
+    return {"message": "Password updated successfully."}
+
 
 @router.post(
     "/login",

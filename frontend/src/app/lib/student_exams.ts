@@ -9,10 +9,14 @@ function authHeaders(token: string) {
 
 export interface StudentExamAttempt {
   id: string;
-  status: "in_progress" | "submitted";
+  status: "in_progress" | "submitted" | "evaluated";
   started_at: string;
   completed_at: string | null;
   deadline: string;
+  result_published_at?: string;
+  total_marks?: number | null;
+  max_marks?: number | null;
+  adjustment_marks?: number | null;
 }
 
 export interface StudentExam {

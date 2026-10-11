@@ -4,6 +4,7 @@ import { useState, FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import AuthCard from "@/app/components/AuthCard";
+import ForgotPasswordModal from "@/app/components/ForgotPasswordModal";
 import { loginUser, logout } from "@/app/lib/auth";
 
 export default function StudentLoginPage() {
@@ -13,6 +14,7 @@ export default function StudentLoginPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [forgotOpen, setForgotOpen] = useState(false);
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -78,9 +80,13 @@ export default function StudentLoginPage() {
               <label htmlFor="student-login-password" className="block font-mono text-xs uppercase tracking-widest text-graphite/60">
                 Password
               </label>
-              <Link href="#" className="font-mono text-[0.65rem] uppercase tracking-widest text-student no-underline hover:underline">
+              <button
+                type="button"
+                onClick={() => setForgotOpen(true)}
+                className="font-mono text-[0.65rem] uppercase tracking-widest text-student no-underline hover:underline cursor-pointer bg-transparent border-none p-0"
+              >
                 Forgot?
-              </Link>
+              </button>
             </div>
             <div className="relative">
               <input
@@ -143,6 +149,11 @@ export default function StudentLoginPage() {
           </Link>
         </div>
       </div>
+      <ForgotPasswordModal
+        isOpen={forgotOpen}
+        onClose={() => setForgotOpen(false)}
+        defaultEmail={email}
+      />
     </AuthCard>
   );
 }

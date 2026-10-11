@@ -4,6 +4,7 @@ import { useEffect, useState, useRef } from "react";
 import { useRouter, useParams } from "next/navigation";
 import { getStoredUser, getStoredToken } from "@/app/lib/auth";
 import { StudentExam, getAllStudentExams, startExamAttempt } from "@/app/lib/student_exams";
+import Link from "next/link";
 
 export default function ExamInstructionsPage() {
   const router = useRouter();
@@ -48,8 +49,9 @@ export default function ExamInstructionsPage() {
             return;
           }
           setExam(found);
+        } else {
+          setError("Exam not found or you are not authorized.");
         }
-        else setError("Exam not found or you are not authorized.");
       })
       .catch(e => setError(e.message))
       .finally(() => setLoading(false));
@@ -60,7 +62,6 @@ export default function ExamInstructionsPage() {
     setStarting(true);
     setError("");
     try {
-      // Stop the preview stream before navigating so the attempt page can grab it
       if (stream) {
         stream.getTracks().forEach(track => track.stop());
       }
@@ -81,13 +82,12 @@ export default function ExamInstructionsPage() {
       if (videoRef.current) {
         videoRef.current.srcObject = mediaStream;
       }
-    } catch (err: any) {
+    } catch {
       setCameraReady(false);
-      setCameraError("Camera access is required for this exam's proctoring. Please allow camera access and try again.");
+      setCameraError("Webcam access is required for proctoring verification. Please allow camera permissions.");
     }
   };
 
-  // Try to start camera when exam data is loaded
   useEffect(() => {
     if (exam && (!exam.attempt || exam.attempt.status === "in_progress") && !cameraReady) {
       requestCamera();
@@ -101,24 +101,25 @@ export default function ExamInstructionsPage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-slate-50 flex items-center justify-center">
-        <div className="w-8 h-8 border-4 border-[#6c63ff] border-t-transparent rounded-full animate-spin"></div>
+      <div className="min-h-screen bg-surface flex items-center justify-center font-label-caps text-xs text-neutral-500">
+        LOADING ASSESSMENT DETAILS...
       </div>
     );
   }
 
   if (error || !exam) {
     return (
-      <div className="min-h-screen bg-slate-50 flex items-center justify-center p-6">
-        <div className="bg-white border border-red-200 rounded-xl p-8 max-w-md w-full shadow-sm text-center">
-          <div className="text-red-500 mb-4">
-            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="mx-auto"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
-          </div>
-          <h2 className="text-xl font-bold text-slate-900 mb-2">Error loading exam</h2>
-          <p className="text-slate-600 mb-6">{error || "Exam not found"}</p>
-          <button onClick={() => router.push("/student/dashboard")} className="px-5 py-2.5 bg-slate-100 text-slate-700 font-semibold rounded-lg hover:bg-slate-200 transition-colors">
-            Back to Dashboard
-          </button>
+      <div className="min-h-screen bg-surface flex items-center justify-center p-6">
+        <div className="bg-surface-container-lowest border border-brand-crimson p-8 max-w-md w-full shadow-[4px_4px_0_0_rgba(0,0,0,0.04)] text-center">
+          <span className="material-symbols-outlined text-brand-crimson text-[36px] mb-2">error</span>
+          <h2 className="font-serif text-2xl text-brand-dark mb-2">Examination Notice</h2>
+          <p className="font-body-md text-xs text-neutral-600 mb-6">{error || "Exam not found"}</p>
+          <Link
+            href="/student/dashboard"
+            className="inline-block bg-brand-dark text-white font-label-caps text-xs uppercase tracking-wider py-3 px-6 hover:bg-brand-crimson"
+          >
+            Return to Dashboard
+          </Link>
         </div>
       </div>
     );
@@ -132,172 +133,138 @@ export default function ExamInstructionsPage() {
   const isPast = now > endTime;
 
   return (
-    <main className="min-h-screen bg-slate-50 py-10 px-4 sm:px-6">
-      <div className="max-w-3xl mx-auto">
-        <button onClick={() => router.push("/student/dashboard")} className="mb-6 flex items-center gap-2 text-slate-500 hover:text-slate-900 transition-colors font-medium">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline></svg>
-          Back to Dashboard
-        </button>
+    <main className="min-h-screen bg-surface py-12 px-6 sm:px-10 font-body-md text-on-surface">
+      <div className="max-w-3xl mx-auto flex flex-col gap-6">
+        <div className="w-12 h-1 bg-brand-crimson"></div>
 
-        <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden relative">
-          <div className="h-2 bg-[#6c63ff] absolute top-0 left-0 right-0"></div>
-          
-          <div className="p-8 sm:p-10 border-b border-slate-100">
-            <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4 mb-4">
-              <div>
-                <span className="inline-block px-3 py-1 bg-indigo-50 text-indigo-700 text-xs font-bold uppercase tracking-widest rounded-full mb-3">
-                  {exam.class_name}
-                </span>
-                <h1 className="text-[2rem] font-bold text-slate-900 tracking-tight leading-tight">
-                  {exam.title}
-                </h1>
-              </div>
+        <Link
+          href="/student/dashboard"
+          className="flex items-center gap-2 font-label-caps text-xs uppercase tracking-wider text-neutral-600 hover:text-black self-start"
+        >
+          <span className="material-symbols-outlined text-[16px]">arrow_back</span>
+          <span>Back to My Classes</span>
+        </Link>
+
+        <div className="bg-surface-container-lowest border border-black/10 shadow-[4px_4px_0_0_rgba(0,0,0,0.04)] overflow-hidden">
+          <div className="p-8 sm:p-10 border-b border-black/10">
+            <div className="flex flex-col gap-2">
+              <span className="font-label-caps text-xs font-bold tracking-[0.2em] text-brand-crimson uppercase">
+                {exam.class_name} / Assessment
+              </span>
+              <h1 className="font-serif text-3xl sm:text-4xl text-brand-dark tracking-tight">
+                {exam.title}
+              </h1>
             </div>
 
-            <div className="flex flex-wrap gap-4 text-sm mt-6 p-5 bg-slate-50 rounded-xl border border-slate-100">
-              <div className="flex-1 min-w-[120px]">
-                <div className="text-slate-500 mb-1 font-semibold">Total Marks</div>
-                <div className="text-xl font-bold text-slate-900">{exam.total_marks}</div>
+            <div className="grid grid-cols-3 gap-4 mt-6 p-4 bg-surface-container-low border border-black/10">
+              <div>
+                <span className="font-label-caps text-[10px] text-neutral-500 uppercase tracking-widest block">TOTAL MARKS</span>
+                <span className="font-serif text-2xl text-brand-dark font-bold">{exam.total_marks}</span>
               </div>
-              <div className="flex-1 min-w-[120px]">
-                <div className="text-slate-500 mb-1 font-semibold">Duration</div>
-                <div className="text-xl font-bold text-slate-900">{exam.duration_minutes} mins</div>
+              <div>
+                <span className="font-label-caps text-[10px] text-neutral-500 uppercase tracking-widest block">DURATION</span>
+                <span className="font-serif text-2xl text-brand-dark font-bold">{exam.duration_minutes} Mins</span>
               </div>
-              <div className="flex-1 min-w-[120px]">
-                <div className="text-slate-500 mb-1 font-semibold">Difficulty</div>
-                <div className="text-xl font-bold text-slate-900 capitalize">{exam.difficulty}</div>
+              <div>
+                <span className="font-label-caps text-[10px] text-neutral-500 uppercase tracking-widest block">DIFFICULTY</span>
+                <span className="font-label-caps text-sm text-brand-dark font-bold tracking-wider mt-1 block uppercase">{exam.difficulty}</span>
               </div>
             </div>
           </div>
 
-          <div className="p-8 sm:p-10 bg-white">
-            <h3 className="text-lg font-bold text-slate-900 mb-4 flex items-center gap-2">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-slate-400"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>
-              Instructions
-            </h3>
-            
-            <ul className="space-y-4 text-slate-600 mb-10 text-[0.95rem] leading-relaxed">
-              <li className="flex items-start gap-3">
-                <div className="mt-1 w-1.5 h-1.5 rounded-full bg-[#6c63ff] shrink-0"></div>
-                You have exactly <strong className="text-slate-900 mx-1">{exam.duration_minutes} minutes</strong> to complete this exam.
-              </li>
-              <li className="flex items-start gap-3">
-                <div className="mt-1 w-1.5 h-1.5 rounded-full bg-[#6c63ff] shrink-0"></div>
-                The timer will start as soon as you click the button below. It will continue running even if you refresh or close the page.
-              </li>
-              <li className="flex items-start gap-3">
-                <div className="mt-1 w-1.5 h-1.5 rounded-full bg-[#6c63ff] shrink-0"></div>
-                Your answers will be saved automatically as you progress.
-              </li>
-              <li className="flex items-start gap-3">
-                <div className="mt-1 w-1.5 h-1.5 rounded-full bg-[#6c63ff] shrink-0"></div>
-                The exam will be submitted automatically when the time runs out. You can also submit manually at any time.
-              </li>
-              <li className="flex items-start gap-3">
-                <div className="mt-1 w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0"></div>
-                Ensure you have a stable internet connection before starting.
-              </li>
-            </ul>
+          <div className="p-8 sm:p-10 flex flex-col gap-8">
+            <div>
+              <h3 className="font-label-caps text-xs uppercase tracking-[0.18em] text-brand-dark font-bold mb-4 flex items-center gap-2">
+                <span className="material-symbols-outlined text-brand-crimson text-[18px]">verified_user</span>
+                <span>EXAMINATION PROTOCOL & INSTRUCTIONS</span>
+              </h3>
+              
+              <ul className="space-y-3 font-body-md text-xs text-neutral-600 leading-relaxed">
+                <li className="flex items-start gap-2.5">
+                  <span className="w-1.5 h-1.5 bg-brand-crimson mt-1.5 shrink-0"></span>
+                  <span>You have exactly <strong className="text-black">{exam.duration_minutes} minutes</strong> to complete the assessment.</span>
+                </li>
+                <li className="flex items-start gap-2.5">
+                  <span className="w-1.5 h-1.5 bg-brand-crimson mt-1.5 shrink-0"></span>
+                  <span>The timer will start immediately upon clicking Start Exam. Auto-save ensures answers are persisted.</span>
+                </li>
+                <li className="flex items-start gap-2.5">
+                  <span className="w-1.5 h-1.5 bg-brand-crimson mt-1.5 shrink-0"></span>
+                  <span>AI and instructor proctoring checks will periodically audit session focus.</span>
+                </li>
+              </ul>
+            </div>
 
-            {/* Webcam Preview Section */}
+            {/* Webcam Proctoring Verification */}
             {(!exam.attempt || exam.attempt?.status === "in_progress") && isAvailable && !isPast && (
-              <div className="mb-10 bg-slate-50 p-6 rounded-2xl border border-slate-200">
-                <h4 className="text-[1.05rem] font-bold text-slate-900 mb-4 flex items-center gap-2">
-                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-[#6c63ff]"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path><circle cx="12" cy="13" r="4"></circle></svg>
-                  Proctoring Setup
-                </h4>
-                
+              <div className="bg-surface-container-low border border-black/10 p-6 flex flex-col gap-4">
+                <div className="flex items-center gap-2">
+                  <span className="material-symbols-outlined text-brand-crimson text-[20px]">videocam</span>
+                  <h4 className="font-label-caps text-xs uppercase tracking-widest text-brand-dark font-bold">
+                    PROCTORING VERIFICATION FEED
+                  </h4>
+                </div>
+
                 <div className="flex flex-col sm:flex-row gap-6 items-center">
-                  <div className="w-full sm:w-[280px] h-[210px] bg-black rounded-xl overflow-hidden relative shadow-inner shrink-0 border-2 border-slate-800">
-                    <video 
-                      ref={videoRef} 
-                      autoPlay 
-                      playsInline 
-                      muted 
+                  <div className="w-full sm:w-[260px] h-[180px] bg-black border-2 border-black flex items-center justify-center shrink-0 overflow-hidden">
+                    <video
+                      ref={videoRef}
+                      autoPlay
+                      playsInline
+                      muted
                       className="w-full h-full object-cover transform -scale-x-100"
                     />
-                    {!cameraReady && !cameraError && (
-                      <div className="absolute inset-0 flex items-center justify-center bg-slate-900">
-                        <div className="w-8 h-8 border-4 border-slate-600 border-t-white rounded-full animate-spin"></div>
-                      </div>
-                    )}
                   </div>
-                  
-                  <div className="flex-1">
+
+                  <div className="flex-1 flex flex-col gap-2">
                     {cameraReady ? (
-                      <div className="bg-green-50 border border-green-200 rounded-lg p-4 text-green-700">
-                        <div className="font-bold flex items-center gap-2 mb-1">
-                          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>
-                          Camera Ready
-                        </div>
-                        <p className="text-[0.9rem]">Your webcam is successfully connected and proctoring is active.</p>
+                      <div className="border border-black bg-white p-3 text-xs font-label-caps font-bold text-brand-dark flex items-center gap-2">
+                        <span className="material-symbols-outlined text-brand-crimson">check_circle</span>
+                        WEBCAM READY & PROCTORING ACTIVE
                       </div>
                     ) : cameraError ? (
-                      <div className="bg-red-50 border border-red-200 rounded-lg p-4 text-red-700">
-                        <div className="font-bold flex items-center gap-2 mb-2">
-                          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
-                          Camera Error
-                        </div>
-                        <p className="text-[0.9rem] mb-3">{cameraError}</p>
-                        <button 
+                      <div className="border border-brand-crimson bg-white p-3 text-xs text-brand-crimson flex flex-col gap-2">
+                        <span>{cameraError}</span>
+                        <button
                           onClick={requestCamera}
-                          className="px-4 py-2 bg-red-100 hover:bg-red-200 text-red-800 font-bold rounded-md text-sm transition-colors"
+                          className="bg-brand-dark text-white font-label-caps text-[10px] uppercase font-bold py-2 px-3 self-start cursor-pointer"
                         >
-                          Retry Camera Access
+                          Retry Camera
                         </button>
                       </div>
                     ) : (
-                      <div className="text-slate-500 text-[0.9rem]">
-                        Requesting camera access...
-                      </div>
+                      <span className="font-label-caps text-xs text-neutral-500">REQUESTING CAMERA ACCESS...</span>
                     )}
-                    
-                    <p className="text-xs text-slate-500 mt-4 bg-white p-3 rounded-md border border-slate-200">
-                      <strong>Privacy Notice:</strong> This exam requires webcam monitoring. Snapshots will be taken periodically to ensure academic integrity.
+
+                    <p className="font-body-md text-[11px] text-neutral-500 leading-relaxed">
+                      This exam requires webcam active monitoring to preserve test integrity.
                     </p>
                   </div>
                 </div>
               </div>
             )}
 
-            <div className="border-t border-slate-100 pt-8 flex flex-col items-center justify-center">
-              {(exam.attempt?.status === "submitted" || exam.attempt?.status === "evaluated") ? (
-                <div className="text-center p-4 bg-green-50 border border-green-200 rounded-lg w-full">
-                  <div className="font-bold text-green-800 mb-1">Exam Submitted</div>
-                  <div className="text-green-700 text-sm">You have already completed this exam.</div>
-                  <button onClick={() => router.push(`/student/exams/${exam.id}/submitted`)} className="mt-3 px-4 py-2 bg-green-600 text-white font-bold rounded-md hover:bg-green-700">View Receipt</button>
-                </div>
-              ) : exam.attempt?.status === "in_progress" ? (
-                <button 
-                  onClick={() => router.push(`/student/exams/${exam.id}/attempt`)}
-                  disabled={!cameraReady}
-                  className={`w-full sm:w-auto px-8 py-3.5 text-white font-bold rounded-xl shadow-[0_4px_14px_0_rgba(245,158,11,0.39)] transition-all transform text-lg ${
-                    cameraReady ? "bg-amber-500 hover:bg-amber-600 hover:-translate-y-0.5" : "bg-slate-300 cursor-not-allowed shadow-none"
-                  }`}
-                >
-                  Resume Exam Attempt
-                </button>
-              ) : isPast ? (
-                <div className="text-center p-4 bg-slate-100 border border-slate-200 rounded-lg w-full text-slate-500 font-semibold">
-                  This exam is no longer available.
+            {/* Action CTA */}
+            <div className="border-t border-black/10 pt-6 flex justify-center">
+              {isPast ? (
+                <div className="p-4 bg-neutral-100 text-neutral-600 font-label-caps text-xs uppercase tracking-wider text-center w-full">
+                  EXAMINATION WINDOW CLOSED
                 </div>
               ) : !isAvailable ? (
-                <div className="text-center p-4 bg-indigo-50 border border-indigo-200 rounded-lg w-full">
-                  <div className="font-bold text-indigo-800 mb-1">Not Yet Available</div>
-                  <div className="text-indigo-700 text-sm">
-                    This exam opens at {startTime.toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" })}
-                  </div>
+                <div className="p-4 bg-neutral-100 text-neutral-800 font-label-caps text-xs uppercase tracking-wider text-center w-full">
+                  OPENS AT: {startTime.toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" })}
                 </div>
               ) : (
-                <button 
+                <button
                   onClick={handleStartExam}
                   disabled={starting || !cameraReady}
-                  className={`w-full sm:w-auto px-8 py-3.5 text-white font-bold rounded-xl shadow-[0_4px_14px_0_rgba(108,99,255,0.39)] transition-all transform text-lg ${
-                    starting ? "bg-[#6c63ff]/70 cursor-not-allowed" : 
-                    !cameraReady ? "bg-slate-300 cursor-not-allowed shadow-none" : "bg-[#6c63ff] hover:bg-[#5a52d5] hover:-translate-y-0.5"
+                  className={`w-full sm:w-auto font-label-caps text-xs tracking-[0.2em] uppercase font-bold py-4 px-10 transition-all cursor-pointer ${
+                    starting || !cameraReady
+                      ? "bg-neutral-300 text-neutral-500 cursor-not-allowed"
+                      : "bg-brand-dark hover:bg-brand-crimson text-white border border-brand-dark hover:border-brand-crimson"
                   }`}
                 >
-                  {starting ? "Preparing your exam..." : !cameraReady ? "Waiting for camera..." : "Start Exam"}
+                  {starting ? "INITIALIZING TEST..." : !cameraReady ? "WAITING FOR CAMERA..." : "START EXAM →"}
                 </button>
               )}
             </div>

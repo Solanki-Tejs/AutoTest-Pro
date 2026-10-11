@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
-import { Inter, Instrument_Serif, JetBrains_Mono } from "next/font/google";
+import { Inter, Bodoni_Moda, Space_Grotesk, JetBrains_Mono } from "next/font/google";
+import { Toaster } from "sonner";
 import "./globals.css";
 
 const inter = Inter({
@@ -9,10 +10,17 @@ const inter = Inter({
   display: "swap",
 });
 
-const instrumentSerif = Instrument_Serif({
-  variable: "--font-instrument",
+const bodoniModa = Bodoni_Moda({
+  variable: "--font-bodoni",
   subsets: ["latin"],
-  weight: ["400"],
+  weight: ["400", "500", "600", "700", "800"],
+  display: "swap",
+});
+
+const spaceGrotesk = Space_Grotesk({
+  variable: "--font-space",
+  subsets: ["latin"],
+  weight: ["400", "500", "600", "700"],
   display: "swap",
 });
 
@@ -28,6 +36,11 @@ export const metadata: Metadata = {
   description:
     "AutoTest Pro helps teachers create and manage tests while giving students a streamlined examination experience. Sign in to get started.",
   keywords: ["online tests", "exam platform", "teacher tools", "student assessments"],
+  icons: {
+    icon: "/logo.png",
+    shortcut: "/logo.png",
+    apple: "/logo.png",
+  },
 };
 
 export default function RootLayout({
@@ -38,9 +51,36 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      className={`${inter.variable} ${instrumentSerif.variable} ${jetbrainsMono.variable} h-full`}
+      className={`${inter.variable} ${bodoniModa.variable} ${spaceGrotesk.variable} ${jetbrainsMono.variable} h-full`}
     >
-      <body className="min-h-full flex flex-col font-sans antialiased text-graphite bg-paper">{children}</body>
+      <head>
+        <link rel="icon" type="image/png" href="/logo.png" />
+        <link rel="shortcut icon" type="image/png" href="/logo.png" />
+        <link rel="apple-touch-icon" href="/logo.png" />
+        <link
+          rel="stylesheet"
+          href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200"
+        />
+      </head>
+      <body className="min-h-full flex flex-col font-sans antialiased text-[#111111] bg-[#f9f9f9]">
+        {children}
+        <Toaster
+          position="top-right"
+          toastOptions={{
+            className: "!rounded-none !border !border-black !bg-white !text-[#111111] !font-sans !shadow-[4px_4px_0_0_#111111] !tracking-wide text-xs",
+            classNames: {
+              toast: "!rounded-none !border !border-black !bg-white !text-[#111111] !font-sans !shadow-[4px_4px_0_0_#111111]",
+              title: "!font-sans !font-bold !text-xs !tracking-wider !uppercase !text-[#111111]",
+              description: "!font-sans !text-xs !text-[#5f5e5e]",
+              actionButton: "!bg-black !text-white !rounded-none !text-xs !font-bold !uppercase !border !border-black",
+              cancelButton: "!bg-[#eeeeee] !text-[#5f5e5e] !rounded-none !text-xs !font-bold !uppercase",
+              closeButton: "!border-black !text-[#111111] !rounded-none",
+              error: "!border-[#ff1d58] !text-[#ff1d58]",
+              success: "!border-black !text-[#111111]",
+            },
+          }}
+        />
+      </body>
     </html>
   );
 }

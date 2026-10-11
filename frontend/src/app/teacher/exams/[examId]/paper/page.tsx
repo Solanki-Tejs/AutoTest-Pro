@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { getStoredUser, getStoredToken, logout } from "@/app/lib/auth";
+import { getStoredUser, getStoredToken } from "@/app/lib/auth";
 import {
   Exam, getExam, getExamBlueprint, Blueprint,
   QuestionBank, getQuestionBank,
@@ -11,6 +11,7 @@ import {
   Question
 } from "@/app/lib/exams";
 import EditableQuestionCard from "@/app/components/EditableQuestionCard";
+import { toast } from "sonner";
 
 export default function PaperEditorPage() {
   const router = useRouter();
@@ -71,12 +72,12 @@ export default function PaperEditorPage() {
             const bpVer = pb.generation.blueprint_version || 1;
             const pbSylls = [...(pb.generation.syllabus_ids || [])].sort();
             const exSylls = [...(ex.selected_pdf_ids || [])].sort();
-            
+
             let paperMarks = 0;
             pb.question_body?.sections?.forEach(sec => {
               sec.questions?.forEach(q => paperMarks += (q.mark || 0));
             });
-            
+
             if (bpVer !== blp.version || JSON.stringify(pbSylls) !== JSON.stringify(exSylls) || paperMarks !== ex.total_marks) {
               setIsStale(true);
             }
@@ -98,50 +99,50 @@ export default function PaperEditorPage() {
     const interval = setInterval(async () => {
       try {
         const status = await getGenerationStatus(t, eId);
-        if (status.status === "generating") {
-          setProgress(status.progress || 0);
-          setCurrentSection(status.current_section || "");
-        } else if (status.status === "generated") {
+        setProgress(status.progress || 0);
+        setCurrentSection(status.current_section || "");
+
+        if (status.status === "complete") {
           clearInterval(interval);
           setGenerating(false);
           const pb = await getQuestionBank(t, eId);
           setPaper(pb);
-          setIsStale(false);
-        } else if (status.status === "generation_failed") {
+          toast.success("Exam paper generated successfully!");
+        } else if (status.status === "error") {
           clearInterval(interval);
           setGenerating(false);
-          setError("Paper generation failed. Please try again.");
+          setError(status.error || "Generation failed.");
+          toast.error("Generation failed");
         }
-      } catch {
-        // ignore fetch errors during polling
+      } catch (e) {
+        clearInterval(interval);
+        setGenerating(false);
       }
     }, 2000);
   }
 
   async function handleGenerateFullPaper() {
     if (!token) return;
-    if (paper && !confirm("Regenerate Entire Paper? A new version will be generated using the current blueprint. Your current version will be preserved. Continue?")) {
-      return;
-    }
+    setError("");
     setGenerating(true);
     setProgress(0);
-    setCurrentSection("Starting...");
-    setError("");
+    setCurrentSection("Initializing AI models...");
+
     try {
       await generatePaper(token, examId);
       pollGeneration(token, examId);
     } catch (e: any) {
       setGenerating(false);
-      setError(e.message || "Failed to start generation");
+      setError(e.message || "Failed to start generation. Make sure Ollama is reachable.");
+      toast.error(e.message || "Failed to start generation");
     }
   }
 
   async function handleApprove() {
     if (!token || !paper) return;
-    // Basic frontend validation for required counts
     let valid = true;
     for (const sec of paper.question_body.sections) {
-      if (sec.questions.length === 0) valid = false; // Add stricter count validation if blueprint is available
+      if (sec.questions.length === 0) valid = false;
     }
     if (!valid && !confirm("Some sections may be incomplete. Approve anyway?")) {
       return;
@@ -149,17 +150,16 @@ export default function PaperEditorPage() {
 
     try {
       await approveQuestionBank(token, examId);
-      alert("Paper approved successfully!");
+      toast.success("Paper approved successfully!");
       router.push(`/teacher/exams/${examId}/answers`);
     } catch (e: any) {
-      alert(e.message || "Failed to approve paper");
+      toast.error(e.message || "Failed to approve paper");
     }
   }
 
   async function handleEditSave(questionId: string, updates: Partial<Question>) {
     if (!token || !paper) return;
     await editQuestion(token, examId, questionId, updates);
-    // Optimistic update
     setPaper(prev => {
       if (!prev) return prev;
       const newSecs = prev.question_body.sections.map(sec => ({
@@ -184,7 +184,7 @@ export default function PaperEditorPage() {
         return { ...prev, question_body: { sections: newSecs } };
       });
     } catch (e: any) {
-      alert(e.message || "Failed to regenerate question");
+      toast.error(e.message || "Failed to regenerate question");
     } finally {
       setRegeneratingIds(prev => {
         const next = new Set(prev);
@@ -207,7 +207,7 @@ export default function PaperEditorPage() {
         return { ...prev, question_body: { sections: newSecs } };
       });
     } catch (e: any) {
-      alert(e.message || "Failed to delete question");
+      toast.error(e.message || "Failed to delete question");
     }
   }
 
@@ -217,6 +217,7 @@ export default function PaperEditorPage() {
     
     const oldCursor = document.body.style.cursor;
     document.body.style.cursor = 'wait';
+    const toastId = toast.loading("Generating PDF document...");
 
     try {
       // @ts-ignore
@@ -231,12 +232,10 @@ export default function PaperEditorPage() {
       const usableWidth = pageWidth - 2 * margin;
       
       let currentY = margin;
-      const scale = 2; // For higher resolution text
+      const scale = 2;
 
       for (let i = 0; i < blocks.length; i++) {
         const block = blocks[i] as HTMLElement;
-        
-        // Skip empty blocks
         if (block.clientHeight === 0) continue;
 
         const dataUrl = await domtoimage.toPng(block, {
@@ -249,27 +248,26 @@ export default function PaperEditorPage() {
             transformOrigin: 'top left',
             width: `${block.clientWidth}px`,
             height: `${block.clientHeight}px`,
-            margin: '0' // Remove external margins for cleaner snapshots
+            margin: '0'
           }
         });
 
-        // Calculate height proportionally for the PDF page width
         const imgHeight = (block.clientHeight * usableWidth) / block.clientWidth;
         
-        // Page break if it exceeds page height (unless it's the very top of a new page anyway)
         if (currentY + imgHeight > pageHeight - margin && currentY > margin) {
           pdf.addPage();
           currentY = margin;
         }
         
         pdf.addImage(dataUrl, 'PNG', margin, currentY, usableWidth, imgHeight);
-        currentY += imgHeight + 6; // 6mm gap between blocks
+        currentY += imgHeight + 6;
       }
 
       pdf.save(`${exam?.title || 'Exam'}_Paper.pdf`);
+      toast.success("PDF downloaded successfully", { id: toastId });
     } catch (e) {
       console.error("PDF generation failed", e);
-      alert("Failed to generate PDF automatically.");
+      toast.error("Failed to generate PDF", { id: toastId });
     } finally {
       document.body.style.cursor = oldCursor;
     }
@@ -277,186 +275,194 @@ export default function PaperEditorPage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-slate-50 flex items-center justify-center p-6">
-        <div className="text-center">
-          <div className="w-8 h-8 border-4 border-slate-200 border-t-[#2563eb] rounded-full animate-spin mx-auto mb-4" />
-          <h2 className="text-slate-900 font-bold text-xl mb-1">Loading Paper...</h2>
-        </div>
+      <div className="py-20 text-center font-sans">
+        <div className="w-10 h-10 border-4 border-[#c4c5da] border-t-[#0047ff] animate-spin mx-auto mb-4" />
+        <span className="font-mono text-xs text-secondary uppercase tracking-widest block">
+          Loading Exam Paper Sheet...
+        </span>
       </div>
     );
   }
 
   if (generating) {
     return (
-      <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-6 animate-fade-up">
-        <div className="w-full max-w-[500px] bg-white border border-slate-200 rounded-2xl shadow-sm p-10 text-center relative overflow-hidden">
-          <div className="absolute top-0 left-0 h-1 bg-[#2563eb] transition-all duration-300" style={{ width: `${progress}%` }} />
+      <div className="py-12 flex flex-col items-center justify-center font-sans">
+        <div className="w-full max-w-[540px] bg-surface-container-lowest border border-black shadow-[6px_6px_0px_#111111] p-10 text-center relative overflow-hidden">
+          <div className="absolute top-0 left-0 h-1.5 bg-[#0047ff] transition-all duration-300" style={{ width: `${progress}%` }} />
 
-          <div className="w-16 h-16 bg-[#2563eb]/10 text-[#2563eb] rounded-full flex items-center justify-center mx-auto mb-6">
-            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83" /></svg>
+          <div className="w-16 h-16 bg-[#dde1ff] text-[#001257] border border-black flex items-center justify-center mx-auto mb-6">
+            <span className="material-symbols-outlined text-[32px] animate-spin">smart_toy</span>
           </div>
 
-          <h2 className="text-[1.8rem] font-bold text-slate-900 tracking-tight mb-2">Generating Paper</h2>
-          <p className="text-slate-500 mb-8 max-w-[300px] mx-auto text-sm leading-relaxed">
-            Please wait while the AI analyzes your syllabus and creates questions based on your blueprint.
+          <span className="px-2.5 py-1 bg-black text-white font-mono text-[10px] font-bold tracking-widest uppercase mb-3 inline-block">
+            SYNTHESIS RUNNER
+          </span>
+
+          <h2 className="font-serif text-3xl font-normal text-on-surface tracking-tight mb-2">
+            Generating Question Paper
+          </h2>
+          <p className="font-sans text-secondary mb-8 max-w-[340px] mx-auto text-sm leading-relaxed">
+            Neural models are synthesizing exam questions mapped directly against syllabus topics and blueprint rules.
           </p>
 
-          <div className="w-full bg-slate-100 h-2.5 rounded-full overflow-hidden mb-3 border border-slate-200/50">
-            <div className="bg-[#2563eb] h-full transition-all duration-500 ease-out rounded-r-full" style={{ width: `${progress}%` }} />
+          <div className="w-full bg-surface-container h-3 border border-black overflow-hidden mb-4">
+            <div className="bg-[#0047ff] h-full transition-all duration-500 ease-out" style={{ width: `${progress}%` }} />
           </div>
 
-          <div className="flex justify-between items-center text-sm font-semibold">
-            <span className="text-[#2563eb] animate-pulse">{currentSection}</span>
-            <span className="text-slate-500">{progress}%</span>
+          <div className="flex justify-between items-center font-mono text-xs uppercase tracking-widest font-bold">
+            <span className="text-[#0047ff] animate-pulse">{currentSection || "Processing..."}</span>
+            <span className="text-secondary">{progress}% COMPLETE</span>
           </div>
         </div>
       </div>
     );
   }
 
-  if (!exam) return <div className="p-8 text-red-600">Exam not found.</div>;
+  if (!exam) return <div className="p-8 text-[#ba1a1a] font-mono text-xs">EXAM_NOT_FOUND // 404</div>;
 
   const isPublished = exam.status === "published";
 
   return (
-    <div className="animate-fade-in">
-      <div className="flex items-center justify-between mb-6 print:hidden">
+    <div className="space-y-6">
+      {/* Editorial Header Bar */}
+      <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 border-b border-black pb-6 print:hidden">
         <div>
-          <h2 className="text-2xl font-bold text-slate-900 tracking-tight">Paper Viewer</h2>
-          <p className="text-slate-600 text-[0.9rem]">Review, edit, and approve the generated paper</p>
+          <div className="flex items-center gap-2 mb-1.5">
+            <span className="px-2 py-0.5 bg-black text-white font-mono text-[10px] font-bold tracking-widest uppercase">
+              STEP 04
+            </span>
+            <span className="font-mono text-xs text-[#0047ff] font-bold uppercase tracking-wider">
+              EXAMINATION PAPER SHEET
+            </span>
+          </div>
+          <h2 className="font-serif text-3xl md:text-4xl font-normal text-on-surface tracking-tight">
+            Paper Sheet Review
+          </h2>
+          <p className="font-sans text-sm text-secondary mt-1">
+            Review, edit inline, regenerate individual questions, and authorize the generated paper sheet.
+          </p>
         </div>
 
         {paper && !generating && (
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3 flex-wrap">
             <button
               onClick={handleDownloadPDF}
-              className="px-4 py-2 bg-white hover:bg-slate-50 border border-slate-300 text-slate-700 text-[0.9rem] font-bold rounded-md shadow-sm transition-colors flex items-center gap-2"
+              className="px-4 py-2.5 bg-surface-container-lowest hover:bg-surface text-on-surface border border-black font-mono text-xs uppercase tracking-wider font-bold shadow-[2px_2px_0px_#111111] active:translate-x-[1px] active:translate-y-[1px] active:shadow-none transition-all cursor-pointer flex items-center gap-1.5"
             >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg>
-              Download PDF
+              <span className="material-symbols-outlined text-[16px]">file_download</span>
+              <span>Download PDF</span>
+            </button>
+            <button
+              onClick={() => window.print()}
+              className="px-4 py-2.5 bg-surface-container-lowest hover:bg-surface text-on-surface border border-black font-mono text-xs uppercase tracking-wider font-bold shadow-[2px_2px_0px_#111111] active:translate-x-[1px] active:translate-y-[1px] active:shadow-none transition-all cursor-pointer flex items-center gap-1.5"
+              title="Print question paper sheet"
+            >
+              <span className="material-symbols-outlined text-[16px]">print</span>
+              <span>Print Paper</span>
             </button>
             <button
               onClick={handleGenerateFullPaper}
               disabled={isPublished}
-              className="px-4 py-2 bg-white hover:bg-slate-50 border border-slate-300 text-slate-700 text-[0.9rem] font-bold rounded-md shadow-sm transition-colors flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+              className="px-4 py-2.5 bg-surface-container-lowest hover:bg-surface text-on-surface border border-black font-mono text-xs uppercase tracking-wider font-bold shadow-[2px_2px_0px_#111111] active:translate-x-[1px] active:translate-y-[1px] active:shadow-none transition-all cursor-pointer flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21.5 2v6h-6M2.13 15.57a9 9 0 1 0 3.84-10.36L2 2" /></svg>
-              Regenerate All
+              <span className="material-symbols-outlined text-[16px]">refresh</span>
+              <span>Regenerate All</span>
             </button>
             <button
               onClick={handleApprove}
               disabled={isPublished}
-              className="px-6 py-2 bg-[#16a34a] hover:bg-[#15803d] text-white text-[0.9rem] font-bold rounded-md shadow-sm transition-colors flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+              className="px-6 py-2.5 bg-[#0047ff] hover:bg-black text-white font-mono text-xs uppercase tracking-wider font-bold border border-black shadow-[3px_3px_0px_#111111] active:translate-x-[1px] active:translate-y-[1px] active:shadow-none transition-all cursor-pointer flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
-              Approve Paper &rarr;
+              <span>Approve Paper</span>
+              <span className="material-symbols-outlined text-[16px]">arrow_forward</span>
             </button>
           </div>
         )}
       </div>
 
       {isStale && paper && !generating && (
-        <div className="mb-6 p-4 bg-amber-50 border border-amber-200 rounded-lg flex items-start gap-4 animate-fade-in print:hidden">
-          <div className="text-amber-500 mt-0.5">
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" /><line x1="12" y1="9" x2="12" y2="13" /><line x1="12" y1="17" x2="12.01" y2="17" /></svg>
-          </div>
-          <div>
-            <h4 className="text-amber-800 font-bold mb-1">Stale Paper Warning</h4>
-            <p className="text-amber-700 text-[0.9rem]">
-              The blueprint or syllabus selection was modified after this paper was generated.
-              The current paper does not reflect your latest settings. Regenerate the paper to apply changes.
-            </p>
+        <div className="p-4 bg-amber-50 border border-amber-300 font-mono text-xs text-amber-900 flex items-start gap-3 print:hidden shadow-[2px_2px_0px_#111111]">
+          <span className="material-symbols-outlined text-[18px] text-amber-700">warning</span>
+          <div className="leading-relaxed">
+            <span className="font-bold">[STALE NOTICE]:</span> The blueprint or syllabus selection was modified after this paper was generated. Regenerate to apply recent updates.
           </div>
         </div>
       )}
 
-      <div className="max-w-4xl mx-auto px-6 py-8">
-        {isPublished && paper && !generating && (
-          <div className="mb-6 p-4 bg-amber-50 border border-amber-200 rounded-lg flex items-start gap-4 animate-fade-in print:hidden">
-            <div className="text-amber-500 mt-0.5">
-              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" /><line x1="12" y1="9" x2="12" y2="13" /><line x1="12" y1="17" x2="12.01" y2="17" /></svg>
+      {error && (
+        <div className="p-4 bg-[#ffdad6] text-[#93000a] border border-[#ba1a1a] font-mono text-xs flex items-center gap-2 print:hidden">
+          <span className="material-symbols-outlined text-[18px]">error</span>
+          <span>{error}</span>
+        </div>
+      )}
+
+      {!paper ? (
+        !generating && (
+          <div className="text-center py-20 bg-surface-container-lowest border border-black shadow-[4px_4px_0px_#111111]">
+            <div className="w-16 h-16 bg-surface border border-black flex items-center justify-center mx-auto mb-4 font-mono text-2xl">
+              📑
             </div>
-            <div>
-              <h4 className="text-amber-800 font-bold mb-1">Exam is Published</h4>
-              <p className="text-amber-700 text-[0.9rem]">
-                This exam has been published. The question paper can no longer be regenerated or modified.
-              </p>
+            <h2 className="font-serif text-2xl font-bold text-on-surface mb-2">No Paper Sheet Generated Yet</h2>
+            <p className="font-sans text-secondary mb-6 text-sm max-w-[340px] mx-auto">
+              Compile the first iteration using your configured blueprint rules and selected curriculum documents.
+            </p>
+            <button
+              onClick={handleGenerateFullPaper}
+              className="px-8 py-3 bg-[#0047ff] hover:bg-black text-white font-mono text-xs uppercase tracking-wider font-bold border border-black shadow-[3px_3px_0px_#111111] active:translate-x-[1px] active:translate-y-[1px] active:shadow-none transition-all cursor-pointer inline-flex items-center gap-2"
+            >
+              <span>Generate Paper Now</span>
+              <span className="material-symbols-outlined text-[16px]">arrow_forward</span>
+            </button>
+          </div>
+        )
+      ) : (
+        /* CRITICAL: DO NOT TOUCH THE QUESTION PAPER DESIGN WHICH DISPLAYS THE QUESTIONS */
+        <div id="paper-container" className="bg-surface shadow-2xl mx-auto border border-grid max-w-[850px] min-h-[1100px] p-12 sm:p-16 font-serif text-graphite print:shadow-none print:border-none print:p-0 print:max-w-none print:w-full">
+          <div className="text-center mb-10 pdf-block border-b border-grid/80 pb-8">
+            <span className="font-mono text-[0.7rem] uppercase tracking-widest text-graphite/50 block mb-2">
+              OFFICIAL ASSESSMENT SHEET
+            </span>
+            <h1 className="text-2xl sm:text-3xl font-bold uppercase tracking-tight mb-2">{exam.title}</h1>
+            <div className="text-lg text-graphite/80 font-medium mb-1">{exam.class_name}</div>
+
+            <div className="flex justify-between items-center font-mono text-xs uppercase tracking-widest font-semibold mt-8 pt-4 border-t border-grid/60 text-graphite/70">
+              <div>TIME DURATION: {exam.duration_minutes} MINS</div>
+              <div>TOTAL MARKS: {exam.total_marks}</div>
             </div>
           </div>
-        )}
 
-        {error && (
-          <div className="p-4 bg-red-50 border border-red-200 rounded-lg text-red-700 mb-8 flex items-start gap-3">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="mt-0.5 shrink-0"><circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" /></svg>
-            <div>
-              <p className="font-bold mb-1">Generation Error</p>
-              <p className="text-sm">{error}</p>
-            </div>
-          </div>
-        )}
+          <div className="flex flex-col gap-8 mt-8">
+            {paper.question_body.sections.map((section) => (
+              <div key={section.sectionNo} className="animate-fade-up break-inside-avoid">
+                {paper.question_body.sections.length > 1 && (
+                  <div className="font-mono text-xs font-bold uppercase tracking-widest text-graphite/70 mb-6 pb-2 border-b border-grid/60 pdf-block">
+                    SECTION // {section.sectionNo}
+                  </div>
+                )}
 
-        {!paper ? (
-          !generating && (
-            <div className="text-center py-20 bg-white border border-slate-200 rounded-2xl shadow-sm">
-              <div className="w-16 h-16 bg-slate-100 text-slate-400 rounded-full flex items-center justify-center mx-auto mb-4">
-                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /><line x1="16" y1="13" x2="8" y2="13" /><line x1="16" y1="17" x2="8" y2="17" /><polyline points="10 9 9 9 8 9" /></svg>
+                {section.questions.length === 0 ? (
+                  <div className="text-center text-graphite/40 italic font-mono text-xs py-4">No questions generated for this section.</div>
+                ) : (
+                  <div className="flex flex-col gap-6">
+                    {section.questions.map((q) => (
+                      <div key={q.question_id} className="pdf-block w-full bg-surface">
+                        <EditableQuestionCard
+                          question={q}
+                          disabled={isPublished}
+                          isRegenerating={regeneratingIds.has(q.question_id)}
+                          onSave={(updates) => handleEditSave(q.question_id, updates)}
+                          onRegenerate={() => handleRegenerateQuestion(q.question_id)}
+                          onDelete={() => handleDeleteQuestion(q.question_id)}
+                        />
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
-              <h2 className="text-xl font-bold text-slate-900 mb-2">No Paper Generated Yet</h2>
-              <p className="text-slate-500 mb-6 text-sm max-w-[300px] mx-auto">
-                Generate the first version of this exam paper using your configured blueprint and syllabus documents.
-              </p>
-              <button onClick={handleGenerateFullPaper}
-                className="px-6 py-2.5 bg-[#2563eb] hover:bg-[#1d4ed8] text-white rounded-md font-semibold shadow-sm transition-colors">
-                Generate Paper Now
-              </button>
-            </div>
-          )
-        ) : (
-          <div id="paper-container" className="bg-white shadow-xl mx-auto border border-slate-200 max-w-[850px] min-h-[1100px] p-12 sm:p-16 font-serif text-black print:shadow-none print:border-none print:p-0 print:max-w-none print:w-full">
-            <div className="text-center mb-10 pdf-block">
-              <h1 className="text-xl sm:text-2xl font-bold uppercase mb-2">QUESTION PAPER</h1>
-              <div className="text-lg mb-1">{exam.class_name}</div>
-              <div className="text-md uppercase underline mb-6">{exam.title}</div>
-
-              <div className="flex justify-between items-center text-sm sm:text-base font-semibold mt-8 mb-2">
-                <div>Time : {exam.duration_minutes} MIN</div>
-                <div>Total Marks. : {exam.total_marks}</div>
-              </div>
-            </div>
-
-            <div className="flex flex-col gap-8 mt-8">
-              {paper.question_body.sections.map((section, secIdx) => (
-                <div key={section.sectionNo} className="animate-fade-up break-inside-avoid">
-                  {paper.question_body.sections.length > 1 && (
-                    <div className="text-center font-bold text-lg mb-6 underline pdf-block py-2">
-                      Section {section.sectionNo}
-                    </div>
-                  )}
-
-                  {section.questions.length === 0 ? (
-                    <div className="text-center text-slate-500 italic text-sm">No questions generated for this section.</div>
-                  ) : (
-                    <div className="flex flex-col gap-6">
-                      {section.questions.map((q) => (
-                        <div key={q.question_id} className="pdf-block w-full bg-white">
-                          <EditableQuestionCard
-                            question={q}
-                            disabled={isPublished}
-                            isRegenerating={regeneratingIds.has(q.question_id)}
-                            onSave={(updates) => handleEditSave(q.question_id, updates)}
-                            onRegenerate={() => handleRegenerateQuestion(q.question_id)}
-                            onDelete={() => handleDeleteQuestion(q.question_id)}
-                          />
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              ))}
-            </div>
+            ))}
           </div>
-        )}
-      </div>
+        </div>
+      )}
     </div>
   );
 }

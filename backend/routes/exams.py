@@ -138,6 +138,9 @@ def save_exam_blueprint(exam_id: str, blueprint_data: BlueprintCreate, db: Sessi
         
     if current_user["role"] != "teacher" or not exam_service.teacher_can_access_exam(user_id, exam_id, db):
         raise HTTPException(status_code=403, detail="Not authorized to modify this exam")
+
+    if exam.get("status") == "published":
+        raise HTTPException(status_code=400, detail="Cannot modify blueprint for a published exam")
         
     # Validate marks
     if not exam_blueprint_service.validate_blueprint_marks(blueprint_data, exam["total_marks"]):

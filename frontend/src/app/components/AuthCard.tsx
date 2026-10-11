@@ -1,7 +1,6 @@
 "use client";
 
 import Link from "next/link";
-import Image from "next/image";
 import { ReactNode } from "react";
 
 export type AuthRole = "teacher" | "student";
@@ -40,16 +39,12 @@ export default function AuthCard({ role, children }: AuthCardProps) {
         <div className="absolute inset-0 bubble-bg pointer-events-none opacity-20" />
 
         <div className="relative z-10">
-          <Link href="/" className="inline-flex items-center gap-3 no-underline text-white">
-            <div className="w-8 h-8 relative flex items-center justify-center bg-white/10 rounded-sm">
-              <Image
-                src="/logo.png"
-                alt="AutoTest Pro Logo"
-                width={60}
-                height={60}
-                className="object-contain"
-              />
-            </div>
+          <Link href="/" className="inline-flex items-center gap-3 no-underline text-white group">
+            <img
+              src="/logo_bg_removed.png"
+              alt="AutoTest Pro Logo"
+              className="h-9 w-auto object-contain shrink-0"
+            />
             <span className="font-mono text-sm font-semibold tracking-widest uppercase">
               AutoTest Pro
             </span>
@@ -71,6 +66,17 @@ export default function AuthCard({ role, children }: AuthCardProps) {
       {/* Right panel — form */}
       <div className="flex-1 flex items-center justify-center p-8 lg:p-16 relative z-10 bg-surface">
         <div className="w-full max-w-[400px]">
+          {/* Mobile brand logo without background */}
+          <div className="md:hidden flex items-center gap-2.5 mb-8">
+            <img
+              src="/logo_bg_removed.png"
+              alt="AutoTest Pro Logo"
+              className="h-8 w-auto object-contain shrink-0"
+            />
+            <span className="font-mono text-xs font-bold tracking-widest uppercase text-graphite">
+              AutoTest Pro
+            </span>
+          </div>
           {children}
         </div>
       </div>

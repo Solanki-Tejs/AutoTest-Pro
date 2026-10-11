@@ -4,6 +4,7 @@ import { useEffect, useState, use } from "react";
 import { useRouter } from "next/navigation";
 import { getStoredToken, getStoredUser } from "@/app/lib/auth";
 import { Exam, getExam, publishExam } from "@/app/lib/exams";
+import { toast } from "sonner";
 
 export default function PublishStepPage(props: { params: Promise<{ examId: string }> }) {
   const params = use(props.params);
@@ -55,7 +56,7 @@ export default function PublishStepPage(props: { params: Promise<{ examId: strin
     if (!token) return;
     
     if (!startTime || !endTime) {
-      alert("Both Start Date & Time and End Date & Time are required to publish the exam.");
+      toast.error("Both Start Date & Time and End Date & Time are required.");
       return;
     }
 
@@ -64,18 +65,18 @@ export default function PublishStepPage(props: { params: Promise<{ examId: strin
     const durationMs = (exam?.duration_minutes || 0) * 60000;
 
     if (end <= start) {
-      alert("End time must be after start time.");
+      toast.error("End time must be strictly after start time.");
       return;
     }
 
     if (end < start + durationMs) {
-      alert(`The time window must be at least ${exam?.duration_minutes} minutes long to accommodate the exam duration.`);
+      toast.error(`The time window must be at least ${exam?.duration_minutes} minutes long to accommodate exam duration.`);
       return;
     }
 
     const current = Date.now();
     if (start <= current || end <= current) {
-      alert("Start time and End time must be in the future.");
+      toast.error("Start time and End time must be set in the future.");
       return;
     }
     
@@ -88,98 +89,156 @@ export default function PublishStepPage(props: { params: Promise<{ examId: strin
       
       const successMsg = isPublished 
         ? (isFinished ? "Exam republished successfully!" : "Publish details updated successfully!")
-        : "Exam published successfully! It is now available to students.";
-      alert(successMsg);
+        : "Exam published successfully! It is now accessible to students.";
+      toast.success(successMsg);
       router.push("/teacher/dashboard");
     } catch (e: any) {
-      alert(e.message || "Failed to publish exam");
+      toast.error(e.message || "Failed to publish exam");
       setPublishing(false);
     }
   }
 
   if (loading) {
-    return <div className="py-20 text-center text-slate-500">Loading Publish Settings...</div>;
+    return (
+      <div className="py-20 text-center font-sans">
+        <div className="w-10 h-10 border-4 border-[#c4c5da] border-t-[#0047ff] animate-spin mx-auto mb-4" />
+        <span className="font-mono text-xs text-secondary uppercase tracking-widest block">
+          Loading Deployment Configuration...
+        </span>
+      </div>
+    );
   }
 
   const isPublished = exam?.status === "published";
   const isFinished = exam?.end_time ? new Date(exam.end_time).getTime() < Date.now() : false;
 
-  let buttonText = publishing ? "Publishing..." : "Publish Exam";
+  let buttonText = publishing ? "Publishing..." : "Publish & Open Exam";
   let titleText = "Finalize & Publish Exam";
-  let subtitleText = "Set the start and end time and make the exam available to students.";
+  let subtitleText = "Establish access windows and activate test administration for enrolled candidates.";
 
   if (isPublished) {
     if (isFinished) {
       buttonText = publishing ? "Republishing..." : "Republish Exam";
       titleText = "Republish Exam";
-      subtitleText = "This exam has ended. Update the time window to republish it.";
+      subtitleText = "This exam cycle has concluded. Extend or modify the active window to reopen.";
     } else {
-      buttonText = publishing ? "Updating..." : "Update Publish Details";
+      buttonText = publishing ? "Updating..." : "Update Publish Window";
       titleText = "Update Publish Details";
-      subtitleText = "Modify the active time window for this exam.";
+      subtitleText = "Modify active scheduling constraints for this published assessment.";
     }
   }
 
   return (
-    <div className="animate-fade-in max-w-3xl mx-auto mt-8">
-      <div className="flex items-center justify-between mb-8">
+    <div className="space-y-6 max-w-4xl mx-auto">
+      {/* Editorial Header */}
+      <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 border-b border-black pb-6">
         <div>
-          <h2 className="text-2xl font-bold text-slate-900 tracking-tight">{titleText}</h2>
-          <p className="text-slate-600 text-[0.9rem]">{subtitleText}</p>
+          <div className="flex items-center gap-2 mb-1.5">
+            <span className="px-2 py-0.5 bg-black text-white font-mono text-[10px] font-bold tracking-widest uppercase">
+              STEP 06
+            </span>
+            <span className="font-mono text-xs text-[#0047ff] font-bold uppercase tracking-wider">
+              DEPLOYMENT &amp; TIMING SCHEDULE
+            </span>
+          </div>
+          <h2 className="font-serif text-3xl md:text-4xl font-normal text-on-surface tracking-tight">
+            {titleText}
+          </h2>
+          <p className="font-sans text-sm text-secondary mt-1">
+            {subtitleText}
+          </p>
         </div>
       </div>
 
-      <div className="bg-white p-8 rounded-xl shadow-sm border border-slate-200">
-        <div className="mb-8 p-5 bg-slate-50 border border-slate-200 rounded-lg">
-          <h3 className="font-bold text-slate-900 text-lg mb-2">{exam?.title}</h3>
-          <div className="flex gap-6 text-sm text-slate-600 mt-2">
-            <div><span className="font-semibold text-slate-700">Marks:</span> {exam?.total_marks}</div>
-            <div><span className="font-semibold text-slate-700">Duration:</span> {exam?.duration_minutes} mins</div>
-            <div><span className="font-semibold text-slate-700">Difficulty:</span> <span className="capitalize">{exam?.difficulty}</span></div>
+      {/* Main Box Card */}
+      <div className="bg-surface-container-lowest p-6 md:p-8 border border-black shadow-[4px_4px_0px_#111111]">
+        {/* Exam Summary Ledger */}
+        <div className="mb-8 p-6 bg-surface-container-low border border-black shadow-[2px_2px_0px_#111111]">
+          <div className="flex items-center justify-between gap-2 flex-wrap mb-2">
+            <span className="font-mono text-[10px] uppercase tracking-widest text-[#0047ff] font-bold">
+              ASSESSMENT DOSSIER
+            </span>
+            <span className={`font-mono text-[10px] uppercase tracking-widest font-bold px-2 py-0.5 border border-black ${
+              isPublished ? "bg-[#005430] text-white" : "bg-black text-white"
+            }`}>
+              {isPublished ? (isFinished ? "EXPIRED" : "LIVE ACTIVE") : "READY TO PUBLISH"}
+            </span>
+          </div>
+          <h3 className="font-serif text-2xl font-bold text-on-surface mb-2">{exam?.title}</h3>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 font-mono text-xs pt-3 border-t border-outline-variant/60">
+            <div>
+              <span className="text-secondary block text-[10px] uppercase">Classroom:</span>
+              <span className="font-bold text-on-surface">{exam?.class_name}</span>
+            </div>
+            <div>
+              <span className="text-secondary block text-[10px] uppercase">Total Marks:</span>
+              <span className="font-bold text-[#0047ff]">{exam?.total_marks} Marks</span>
+            </div>
+            <div>
+              <span className="text-secondary block text-[10px] uppercase">Duration:</span>
+              <span className="font-bold text-on-surface">{exam?.duration_minutes} Mins</span>
+            </div>
+            <div>
+              <span className="text-secondary block text-[10px] uppercase">Difficulty:</span>
+              <span className="font-bold text-on-surface capitalize">{exam?.difficulty}</span>
+            </div>
           </div>
         </div>
 
+        {/* Date Time Windows Inputs */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
           <div>
-            <label className="block text-[0.85rem] font-bold text-slate-700 mb-2">Start Date & Time (Required)</label>
+            <label className="block font-mono text-xs font-bold uppercase tracking-wider text-on-surface mb-2">
+              Start Date &amp; Time <span className="text-[#0047ff]">*</span>
+            </label>
             <input 
               type="datetime-local" 
               required
               min={new Date(new Date().getTime() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16)}
-              className="w-full px-4 py-3 border border-slate-300 rounded-md focus:border-[#2563eb] focus:ring-1 focus:ring-[#2563eb] outline-none transition-all"
+              className="w-full px-4 py-2.5 bg-surface-container-lowest border border-black focus:border-[#0047ff] outline-none font-sans text-sm focus:ring-1 focus:ring-[#0047ff] transition-colors"
               value={startTime} 
               onChange={e => setStartTime(e.target.value)} 
             />
-            <p className="text-xs text-slate-500 mt-2">When students can begin the exam.</p>
+            <p className="font-mono text-[10px] text-secondary mt-1.5 uppercase">
+              Students cannot access assessment prior to this timestamp.
+            </p>
           </div>
+
           <div>
-            <label className="block text-[0.85rem] font-bold text-slate-700 mb-2">End Date & Time (Required)</label>
+            <label className="block font-mono text-xs font-bold uppercase tracking-wider text-on-surface mb-2">
+              End Date &amp; Time <span className="text-[#0047ff]">*</span>
+            </label>
             <input 
               type="datetime-local" 
               required
               min={startTime || new Date(new Date().getTime() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16)}
-              className="w-full px-4 py-3 border border-slate-300 rounded-md focus:border-[#2563eb] focus:ring-1 focus:ring-[#2563eb] outline-none transition-all"
+              className="w-full px-4 py-2.5 bg-surface-container-lowest border border-black focus:border-[#0047ff] outline-none font-sans text-sm focus:ring-1 focus:ring-[#0047ff] transition-colors"
               value={endTime} 
               onChange={e => setEndTime(e.target.value)} 
             />
-            <p className="text-xs text-slate-500 mt-2">When the exam will automatically close.</p>
+            <p className="font-mono text-[10px] text-secondary mt-1.5 uppercase">
+              Submissions automatically close once this timestamp lapses.
+            </p>
           </div>
         </div>
 
-        <div className="flex justify-end pt-6 border-t border-slate-200 mt-6 gap-4">
+        {/* Footer Navigation */}
+        <div className="flex justify-between items-center pt-6 border-t border-black mt-8 gap-4 flex-wrap">
           <button 
             onClick={() => router.push(`/teacher/exams/${params.examId}/answers`)}
             disabled={publishing}
-            className="px-6 py-2.5 border border-slate-300 bg-white text-slate-700 font-bold text-[0.95rem] rounded-md hover:bg-slate-50 transition-colors"
+            className="px-6 py-3 border border-black bg-surface text-on-surface hover:bg-black hover:text-white font-mono text-xs uppercase tracking-wider font-bold shadow-[2px_2px_0px_#111111] active:translate-x-[1px] active:translate-y-[1px] active:shadow-none transition-all cursor-pointer inline-flex items-center gap-2"
           >
-            &larr; Back to Answers
+            <span className="material-symbols-outlined text-[16px]">arrow_back</span>
+            <span>Back to Answers</span>
           </button>
           <button 
             onClick={handlePublish}
             disabled={publishing || !startTime || !endTime}
-            className="px-8 py-2.5 bg-[#2563eb] text-white font-bold text-[0.95rem] rounded-md hover:bg-[#1d4ed8] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            className="px-8 py-3 bg-[#0047ff] hover:bg-black text-white font-mono text-xs uppercase tracking-wider font-bold border border-black shadow-[3px_3px_0px_#111111] active:translate-x-[1px] active:translate-y-[1px] active:shadow-none transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center gap-2"
           >
-            {buttonText}
+            <span>{buttonText}</span>
+            <span className="material-symbols-outlined text-[16px]">verified</span>
           </button>
         </div>
       </div>

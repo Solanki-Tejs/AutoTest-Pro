@@ -23,6 +23,7 @@ def ensure_tables(db: Session):
             status VARCHAR(50) NOT NULL DEFAULT 'in_progress',
             total_marks NUMERIC(10, 2) NULL,
             max_marks NUMERIC(10, 2) NULL,
+            adjustment_marks NUMERIC(10, 2) DEFAULT 0.0,
             evaluated_at TIMESTAMP WITH TIME ZONE NULL,
             result_published_at TIMESTAMP WITH TIME ZONE NULL,
             UNIQUE(exam_id, student_id)
@@ -40,6 +41,9 @@ def ensure_tables(db: Session):
                 ALTER TABLE exam_attempts ADD COLUMN max_marks NUMERIC(10, 2) NULL;
                 ALTER TABLE exam_attempts ADD COLUMN evaluated_at TIMESTAMP WITH TIME ZONE NULL;
                 ALTER TABLE exam_attempts ADD COLUMN result_published_at TIMESTAMP WITH TIME ZONE NULL;
+            END IF;
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='exam_attempts' AND column_name='adjustment_marks') THEN
+                ALTER TABLE exam_attempts ADD COLUMN adjustment_marks NUMERIC(10, 2) DEFAULT 0.0;
             END IF;
         END
         $$;
@@ -95,7 +99,10 @@ def get_student_exams(student_id: int, db: Session) -> List[Dict[str, Any]]:
                 'started_at', ea.started_at,
                 'completed_at', ea.completed_at,
                 'deadline', ea.deadline,
-                'result_published_at', ea.result_published_at
+                'result_published_at', ea.result_published_at,
+                'total_marks', ea.total_marks,
+                'max_marks', ea.max_marks,
+                'adjustment_marks', ea.adjustment_marks
             ) FROM exam_attempts ea WHERE ea.exam_id = e.id AND ea.student_id = :student_id LIMIT 1) as attempt
         FROM exams e
         JOIN class_enrollments ce ON e.class_id = ce.class_id
@@ -319,5 +326,24 @@ def submit_exam_attempt(student_id: int, exam_id: str, answers: List[Dict[str, A
         {"$set": submission_data},
         upsert=True
     )
+
+    try:
+        from services.notification_service import create_notification
+        ex_info = db.execute(
+            text("SELECT e.title, c.teacher_id, u.email as student_email FROM exams e JOIN classes c ON e.class_id = c.id JOIN users u ON u.id = :sid WHERE e.id = :eid"),
+            {"eid": exam_id, "sid": student_id}
+        ).mappings().first()
+        if ex_info:
+            create_notification(
+                user_id=ex_info["teacher_id"],
+                title="Exam Attempt Submitted",
+                message=f"Student {ex_info['student_email']} submitted their paper for '{ex_info['title']}'.",
+                notification_type="exam",
+                link=f"/teacher/exams/{exam_id}/results",
+                db=db
+            )
+    except Exception as e:
+        print(f"[NOTIFICATION ERROR] {e}")
     
     return dict(completed_attempt)
+

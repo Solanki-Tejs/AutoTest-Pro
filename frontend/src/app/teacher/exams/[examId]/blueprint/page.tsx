@@ -6,12 +6,13 @@ import { getStoredToken, getStoredUser } from "@/app/lib/auth";
 import { getExam, getExamBlueprint, saveExamBlueprint, Exam, Section } from "@/app/lib/exams";
 import { SyllabusAvailable } from "@/app/lib/exams";
 import debounce from "lodash/debounce";
+import { toast } from "sonner";
 
 export default function ExamBlueprintPage() {
   const router = useRouter();
   const params = useParams();
   const examId = params.examId as string;
-  
+
   const [token, setToken] = useState<string | null>(null);
   const [exam, setExam] = useState<Exam | null>(null);
   const [syllabuses, setSyllabuses] = useState<SyllabusAvailable[]>([]);
@@ -44,13 +45,14 @@ export default function ExamBlueprintPage() {
         setExam(exm);
         setSections(blp.sections || []);
         setVersion(blp.version || 1);
-        
+
         const initialMarks = (blp.sections || []).reduce((acc: number, sec: any) => acc + ((parseInt(String(sec.count)) || 0) * (parseInt(String(sec.marks_each)) || 0)), 0);
         setDbBlueprintMarks(initialMarks);
-        
+
         setSyllabuses(sylls.filter(s => exm.selected_pdf_ids.includes(s.id)));
       } catch (err: any) {
         setError(err.message || "Failed to load blueprint data");
+        toast.error("Failed to load blueprint");
       } finally {
         setLoading(false);
       }
@@ -73,25 +75,26 @@ export default function ExamBlueprintPage() {
       if (hasInvalidNumeric || currentMarks !== examTotal) {
         setSaveStatus("idle");
         if (hasInvalidNumeric) {
-          setError("Count and Marks/Q must be a positive number.");
+          setError("Count and Marks/Q must be positive numbers.");
         } else {
-          // Silently wait for the teacher to finish math, don't nag them
           setError("");
         }
-        return; // don't auto-save invalid blueprint
+        return;
       }
       setSaveStatus("saving");
       try {
         const newBlp = await saveExamBlueprint(t, examId, secs, v);
-        setVersion(newBlp.version);
+        setVersion(newBlp.version || 1);
         setDbBlueprintMarks(currentMarks);
         setSaveStatus("saved");
-        setError(""); // Clear error on success
+        setError("");
+        toast.success("Blueprint saved");
         setTimeout(() => setSaveStatus("idle"), 2000);
       } catch (err: any) {
         console.error(err);
         setSaveStatus("error");
         setError(err.message || "Failed to save");
+        toast.error("Blueprint save failed");
       }
     }, 1000),
     [examId, examTotal]
@@ -120,6 +123,7 @@ export default function ExamBlueprintPage() {
 
   const removeSection = (index: number) => {
     triggerUpdate(sections.filter((_, i) => i !== index));
+    toast.success("Section removed");
   };
 
   const handleGenerate = async () => {
@@ -127,153 +131,229 @@ export default function ExamBlueprintPage() {
     setError("");
     if (configuredMarks !== examTotal) {
       setError(`Configured marks (${configuredMarks}) must match exam total marks (${examTotal}).`);
+      toast.error(`Marks mismatch: ${configuredMarks}/${examTotal}`);
       return;
     }
-    
+
     setSaveStatus("saving");
     try {
       const newBlp = await saveExamBlueprint(token, examId, sections, version);
-      setVersion(newBlp.version);
+      setVersion(newBlp.version || 1);
       const { generatePaper } = await import("@/app/lib/exams");
       await generatePaper(token, examId);
+      toast.success("Paper generation started");
       router.push(`/teacher/exams/${examId}/paper`);
     } catch (err: any) {
       setError(err.message || "Failed to generate paper. Make sure Ollama is running.");
       setSaveStatus("error");
+      toast.error(err.message || "Paper generation failed");
     }
   };
 
   const isPublished = exam?.status === "published";
 
   if (loading) {
-    return <div className="min-h-screen bg-slate-50 flex items-center justify-center">Loading...</div>;
+    return (
+      <div className="py-20 text-center font-sans">
+        <div className="w-10 h-10 border-4 border-[#c4c5da] border-t-[#0047ff] animate-spin mx-auto mb-4" />
+        <span className="font-mono text-xs text-secondary uppercase tracking-widest block">
+          Loading Blueprint Schema...
+        </span>
+      </div>
+    );
   }
 
-  if (!exam) return <div className="p-8 text-red-600">Exam not found.</div>;
+  if (!exam) return <div className="p-8 text-[#ba1a1a] font-mono text-xs">EXAM_NOT_FOUND // 404</div>;
 
   return (
-    <div className="animate-fade-in">
+    <div className="space-y-6">
       {dbBlueprintMarks !== null && dbBlueprintMarks > 0 && dbBlueprintMarks !== examTotal && (
-        <div className="mb-6 p-4 bg-yellow-50 text-yellow-800 border border-yellow-200 rounded-md font-semibold text-[0.9rem] flex items-start gap-2">
-          <span>⚠️</span>
+        <div className="p-4 bg-amber-50 text-amber-900 border border-amber-300 font-mono text-xs flex items-start gap-3">
+          <span className="material-symbols-outlined text-[18px] text-amber-700">warning</span>
           <div>
-            Warning: The exam's total marks have been updated to {examTotal}, but your last saved blueprint was configured for {dbBlueprintMarks}. Please adjust your sections to match the new total marks before you can generate the paper.
+            The exam's total marks were set to {examTotal}, but your blueprint currently totals {dbBlueprintMarks}. Adjust section counts to reach {examTotal} marks.
           </div>
         </div>
       )}
-      <div className="flex items-center justify-between mb-6">
+
+      {/* Editorial Header Bar */}
+      <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 border-b border-black pb-6">
         <div>
-          <h2 className="text-2xl font-bold text-slate-900 tracking-tight">Blueprint Config</h2>
-          <p className="text-slate-600 text-[0.9rem]">Define the structure and sections</p>
+          <div className="flex items-center gap-2 mb-1.5">
+            <span className="px-2 py-0.5 bg-black text-white font-mono text-[10px] font-bold tracking-widest uppercase">
+              STEP 03
+            </span>
+            <span className="font-mono text-xs text-[#0047ff] font-bold uppercase tracking-wider">
+              BLUEPRINT SPECIFICATION // v{version}
+            </span>
+          </div>
+          <h2 className="font-serif text-3xl md:text-4xl font-normal text-on-surface tracking-tight">
+            Blueprint Architecture
+          </h2>
+          <p className="font-sans text-sm text-secondary mt-1">
+            Structure question sections, taxonomies, item frequencies, and mark allocations.
+          </p>
         </div>
-        
-        <div className="flex items-center gap-6">
-          <div className="text-right">
-            <div className="text-[0.75rem] font-bold text-slate-500 uppercase tracking-widest mb-1">Marks</div>
-            <div className={`text-[1.5rem] font-bold leading-none ${remainingMarks === 0 ? "text-green-600" : remainingMarks < 0 ? "text-red-600" : "text-[#2563eb]"}`}>
-              {configuredMarks} <span className="text-slate-300 text-[1.1rem]">/ {examTotal}</span>
+
+        {/* Marks Status Box */}
+        <div className="flex items-center gap-4">
+          <div className="bg-surface-container-lowest border border-black shadow-[3px_3px_0px_#111111] px-5 py-2.5 text-right">
+            <span className="font-mono text-[10px] uppercase tracking-widest text-secondary block font-bold">
+              CONFIGURED MARKS
+            </span>
+            <div className={`font-mono text-2xl font-bold leading-tight ${
+              remainingMarks === 0 ? "text-[#005430]" : remainingMarks < 0 ? "text-[#ba1a1a]" : "text-[#0047ff]"
+            }`}>
+              {configuredMarks} <span className="text-secondary text-sm">/ {examTotal}</span>
             </div>
           </div>
-          <div className="w-px h-8 bg-slate-200"></div>
-          <div className="text-sm font-medium min-w-[80px]">
-            {saveStatus === "saving" && <span className="text-slate-500 flex items-center gap-2"><div className="w-3 h-3 rounded-full border-2 border-slate-300 border-t-[#2563eb] animate-spin"></div> Saving...</span>}
-            {saveStatus === "saved" && <span className="text-green-600">✓ Saved</span>}
-            {saveStatus === "error" && <span className="text-red-500">⚠ Failed to save</span>}
+
+          <div className="font-mono text-xs font-bold">
+            {saveStatus === "saving" && (
+              <span className="text-secondary flex items-center gap-1.5 px-3 py-1 bg-surface-container border border-outline-variant">
+                <span className="w-2 h-2 rounded-full border border-black border-t-[#0047ff] animate-spin" />
+                SAVING
+              </span>
+            )}
+            {saveStatus === "saved" && (
+              <span className="text-[#005430] px-3 py-1 bg-[#e8f5e9] border border-[#81c784]/60">
+                ✓ SAVED
+              </span>
+            )}
+            {saveStatus === "error" && (
+              <span className="text-[#ba1a1a] px-3 py-1 bg-[#ffdad6] border border-[#ba1a1a]/40">
+                ⚠ ERROR
+              </span>
+            )}
           </div>
         </div>
       </div>
 
       {isPublished && (
-        <div className="mb-6 p-4 bg-amber-50 text-amber-800 border border-amber-200 rounded-md font-semibold text-[0.9rem]">
-          This exam is published. The blueprint cannot be modified.
+        <div className="p-4 bg-amber-50 border border-amber-300 font-mono text-xs text-amber-900 flex items-center gap-2">
+          <span className="material-symbols-outlined text-[18px]">lock</span>
+          <span>THIS EXAM IS PUBLISHED. BLUEPRINT CONFIGURATION IS LOCKED.</span>
         </div>
       )}
 
-      <div className="flex items-start gap-8">
-        
-        {/* ── Main Content ── */}
-        <div className="flex-1">
-          <div className="flex items-center justify-between mb-6">
-            <h2 className="text-[1.2rem] font-bold text-slate-900">Exam Sections</h2>
-            <button 
+      {/* Main 2-Column Layout */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+        {/* Sections Column (8 cols) */}
+        <div className="lg:col-span-8 flex flex-col gap-6">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <span className="font-serif text-xl font-bold text-on-surface">Exam Sections</span>
+              <span className="font-mono text-xs px-2 py-0.5 bg-black text-white font-bold">
+                {sections.length} TOTAL
+              </span>
+            </div>
+            <button
               onClick={addSection}
               disabled={isPublished}
-              className="flex items-center gap-1.5 px-4 py-2 border border-slate-300 hover:border-[#2563eb] text-slate-700 hover:text-[#2563eb] bg-white rounded-md text-[0.85rem] font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              className="px-4 py-2 bg-surface hover:bg-black hover:text-white text-on-surface border border-black font-mono text-xs uppercase tracking-wider font-bold shadow-[2px_2px_0px_#111111] active:translate-x-[1px] active:translate-y-[1px] active:shadow-none transition-all cursor-pointer disabled:opacity-50 inline-flex items-center gap-1.5"
             >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
-              Add Section
+              <span className="material-symbols-outlined text-[16px]">add</span>
+              <span>Add Section</span>
             </button>
           </div>
-          
-          {error && <div className="mb-6 p-4 bg-red-50 text-red-600 border border-red-200 rounded-md font-semibold text-[0.9rem]">{error}</div>}
+
+          {error && (
+            <div className="p-4 bg-[#ffdad6] text-[#93000a] border border-[#ba1a1a] font-mono text-xs flex items-center gap-2">
+              <span className="material-symbols-outlined text-[18px]">error</span>
+              <span>{error}</span>
+            </div>
+          )}
 
           {sections.length === 0 ? (
-            <div className="text-center py-16 px-8 bg-white border border-dashed border-slate-300 rounded-xl">
-              <div className="text-4xl mb-4">📑</div>
-              <h3 className="text-[1.1rem] font-bold text-slate-900 mb-2">No Sections Yet</h3>
-              <p className="text-slate-500 text-[0.9rem] mb-6">Add a section to define the structure of your exam.</p>
-              <button onClick={addSection} disabled={isPublished} className="text-[#2563eb] font-semibold hover:underline disabled:opacity-50 disabled:cursor-not-allowed">Add First Section</button>
+            <div className="text-center py-16 px-8 bg-surface-container-lowest border border-dashed border-black shadow-[4px_4px_0px_#111111]">
+              <span className="material-symbols-outlined text-4xl text-secondary mb-2">dashboard_customize</span>
+              <h3 className="font-serif text-xl font-bold text-on-surface mb-1">No Sections Defined</h3>
+              <p className="font-sans text-xs text-secondary mb-6 max-w-sm mx-auto">
+                Add sections to establish questions types, marks per question, and frequency distribution.
+              </p>
+              <button 
+                onClick={addSection} 
+                disabled={isPublished} 
+                className="px-6 py-2.5 bg-[#0047ff] text-white border border-black shadow-[3px_3px_0px_#111111] font-mono text-xs uppercase tracking-wider font-bold hover:bg-black transition-all cursor-pointer"
+              >
+                + Add First Section
+              </button>
             </div>
           ) : (
-            <div className="space-y-5">
+            <div className="space-y-4">
               {sections.map((section, index) => (
-                <div key={index} className="bg-white border border-slate-200 rounded-xl p-6 shadow-sm relative group animate-fade-up" style={{ animationDelay: `${index * 0.05}s` }}>
-                  <button 
+                <div 
+                  key={index} 
+                  className="bg-surface-container-lowest border border-black p-6 shadow-[3px_3px_0px_#111111] relative"
+                >
+                  <button
                     onClick={() => removeSection(index)}
                     disabled={isPublished}
-                    className="absolute top-4 right-4 text-slate-400 hover:text-red-500 p-1.5 bg-slate-50 hover:bg-red-50 rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                    className="absolute top-4 right-4 w-7 h-7 border border-black bg-surface text-secondary hover:bg-[#ba1a1a] hover:text-white flex items-center justify-center transition-colors cursor-pointer disabled:opacity-50"
                     title="Delete Section"
                   >
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6" /><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6" /><path d="M10 11v6M14 11v6" /></svg>
+                    <span className="material-symbols-outlined text-[16px]">close</span>
                   </button>
-                  
-                  <div className="grid grid-cols-12 gap-5 items-end">
+
+                  <div className="grid grid-cols-12 gap-4 items-end">
                     <div className="col-span-12 md:col-span-4">
-                      <label className="block text-[0.8rem] font-bold text-slate-700 mb-1.5">Section Name</label>
-                      <input 
-                        type="text" 
+                      <label className="block font-mono text-[10px] uppercase tracking-wider text-secondary font-bold mb-1.5">
+                        Section Label
+                      </label>
+                      <input
+                        type="text"
                         value={section.section}
                         disabled={isPublished}
                         onChange={e => updateSection(index, "section", e.target.value)}
-                        className="w-full px-3 py-2 border border-slate-300 rounded-md focus:border-[#2563eb] focus:ring-1 focus:ring-[#2563eb] outline-none text-[0.9rem] disabled:bg-slate-100 disabled:text-slate-500"
+                        className="w-full px-3 py-2 bg-surface border border-black focus:border-[#0047ff] outline-none font-sans text-sm disabled:opacity-50"
                       />
                     </div>
+
                     <div className="col-span-6 md:col-span-3">
-                      <label className="block text-[0.8rem] font-bold text-slate-700 mb-1.5">Question Type</label>
-                      <select 
+                      <label className="block font-mono text-[10px] uppercase tracking-wider text-secondary font-bold mb-1.5">
+                        Question Type
+                      </label>
+                      <select
                         value={section.type}
                         disabled={isPublished}
                         onChange={e => updateSection(index, "type", e.target.value)}
-                        className="w-full px-3 py-2 border border-slate-300 rounded-md focus:border-[#2563eb] focus:ring-1 focus:ring-[#2563eb] outline-none text-[0.9rem] disabled:bg-slate-100 disabled:text-slate-500"
+                        className="w-full px-3 py-2 bg-surface border border-black focus:border-[#0047ff] outline-none font-sans text-sm disabled:opacity-50 cursor-pointer"
                       >
-                        <option value="mcq">MCQ</option>
-                        <option value="short">Short Answer</option>
-                        <option value="long">Long Answer</option>
-                        <option value="case_study">Case Study</option>
+                        <option value="mcq">MCQ (Objective)</option>
+                        <option value="short">Short Conceptual</option>
+                        <option value="long">Long Essay / Proof</option>
+                        <option value="case_study">Case Analysis</option>
                       </select>
                     </div>
+
                     <div className="col-span-3 md:col-span-2">
-                      <label className="block text-[0.8rem] font-bold text-slate-700 mb-1.5">Count</label>
-                      <input 
+                      <label className="block font-mono text-[10px] uppercase tracking-wider text-secondary font-bold mb-1.5">
+                        Quantity
+                      </label>
+                      <input
                         type="number" min="1"
                         value={section.count}
                         disabled={isPublished}
                         onChange={e => updateSection(index, "count", e.target.value)}
-                        className="w-full px-3 py-2 border border-slate-300 rounded-md focus:border-[#2563eb] focus:ring-1 focus:ring-[#2563eb] outline-none text-[0.9rem] disabled:bg-slate-100 disabled:text-slate-500"
+                        className="w-full px-3 py-2 bg-surface border border-black focus:border-[#0047ff] outline-none font-mono text-sm font-bold text-center disabled:opacity-50"
                       />
                     </div>
+
                     <div className="col-span-3 md:col-span-2">
-                      <label className="block text-[0.8rem] font-bold text-slate-700 mb-1.5">Marks/Q</label>
-                      <input 
+                      <label className="block font-mono text-[10px] uppercase tracking-wider text-secondary font-bold mb-1.5">
+                        Marks / Q
+                      </label>
+                      <input
                         type="number" min="1"
                         value={section.marks_each}
                         disabled={isPublished}
                         onChange={e => updateSection(index, "marks_each", e.target.value)}
-                        className="w-full px-3 py-2 border border-slate-300 rounded-md focus:border-[#2563eb] focus:ring-1 focus:ring-[#2563eb] outline-none text-[0.9rem] disabled:bg-slate-100 disabled:text-slate-500"
+                        className="w-full px-3 py-2 bg-surface border border-black focus:border-[#0047ff] outline-none font-mono text-sm font-bold text-center disabled:opacity-50"
                       />
                     </div>
+
                     <div className="col-span-12 md:col-span-1 pb-2">
-                      <div className="text-[1.1rem] font-bold text-slate-900 text-right">
+                      <div className="font-mono text-sm font-bold text-on-surface text-right">
                         = {(parseInt(String(section.count)) || 0) * (parseInt(String(section.marks_each)) || 0)}
                       </div>
                     </div>
@@ -283,67 +363,76 @@ export default function ExamBlueprintPage() {
             </div>
           )}
 
-          <div className="flex justify-between items-center pt-8 border-t border-slate-200 mt-8">
-            <button 
+          {/* Navigation Bar */}
+          <div className="flex justify-between items-center pt-6 border-t border-black mt-6">
+            <button
               onClick={() => router.push(`/teacher/exams/${examId}/syllabus`)}
-              className="px-6 py-2.5 text-slate-600 font-semibold text-[0.95rem] hover:text-slate-900 transition-colors"
+              className="px-6 py-3 border border-black bg-surface text-on-surface hover:bg-black hover:text-white font-mono text-xs uppercase tracking-wider font-bold shadow-[2px_2px_0px_#111111] active:translate-x-[1px] active:translate-y-[1px] active:shadow-none transition-all cursor-pointer inline-flex items-center gap-2"
             >
-              &larr; Back to Syllabus
+              <span className="material-symbols-outlined text-[16px]">arrow_back</span>
+              <span>Back to Syllabus</span>
             </button>
-            <button 
-              onClick={handleGenerate} 
+            <button
+              onClick={handleGenerate}
               disabled={isPublished || saveStatus === "saving" || remainingMarks !== 0}
-              className="px-6 py-2.5 bg-[#2563eb] hover:bg-[#1d4ed8] text-white text-[0.95rem] font-bold rounded-md shadow-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              className="px-8 py-3 bg-[#0047ff] hover:bg-black text-white font-mono text-xs uppercase tracking-wider font-bold border border-black shadow-[3px_3px_0px_#111111] active:translate-x-[1px] active:translate-y-[1px] active:shadow-none transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center gap-2"
             >
-              Generate Paper &rarr;
+              <span>Generate Paper</span>
+              <span className="material-symbols-outlined text-[16px]">arrow_forward</span>
             </button>
           </div>
         </div>
 
-        {/* ── Sidebar Info ── */}
-        <div className="w-[300px] shrink-0">
-          <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm mb-5">
-            <h3 className="font-bold text-slate-900 text-[1.05rem] mb-4">Exam Info</h3>
-            
-            <div className="space-y-4">
+        {/* Sidebar Info Column (4 cols) */}
+        <div className="lg:col-span-4 flex flex-col gap-6">
+          <div className="bg-surface-container-lowest border border-black shadow-[3px_3px_0px_#111111] p-6">
+            <h3 className="font-serif text-lg font-bold text-on-surface mb-4 pb-2 border-b border-black">
+              Exam Summary
+            </h3>
+
+            <div className="space-y-4 font-mono text-xs">
               <div>
-                <div className="text-[0.75rem] text-slate-500 uppercase tracking-widest font-semibold mb-1">Class</div>
-                <div className="text-[0.9rem] font-medium text-slate-900">{exam.class_name}</div>
+                <span className="text-secondary uppercase tracking-widest block text-[10px] mb-1">
+                  Classroom
+                </span>
+                <span className="text-on-surface font-bold font-sans text-sm">{exam.class_name}</span>
               </div>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-2 gap-4 pt-3 border-t border-outline-variant/60">
                 <div>
-                  <div className="text-[0.75rem] text-slate-500 uppercase tracking-widest font-semibold mb-1">Duration</div>
-                  <div className="text-[0.9rem] font-medium text-slate-900">{exam.duration_minutes} Mins</div>
+                  <span className="text-secondary uppercase tracking-widest block text-[10px] mb-1">
+                    Duration
+                  </span>
+                  <span className="text-on-surface font-bold">{exam.duration_minutes} Mins</span>
                 </div>
                 <div>
-                  <div className="text-[0.75rem] text-slate-500 uppercase tracking-widest font-semibold mb-1">Difficulty</div>
-                  <div className="text-[0.9rem] font-medium text-slate-900 capitalize">{exam.difficulty}</div>
+                  <span className="text-secondary uppercase tracking-widest block text-[10px] mb-1">
+                    Difficulty
+                  </span>
+                  <span className="text-on-surface font-bold capitalize">{exam.difficulty}</span>
                 </div>
               </div>
             </div>
           </div>
 
-          <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm">
-            <h3 className="font-bold text-slate-900 text-[1.05rem] mb-4 flex items-center gap-2">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="text-[#2563eb]"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z" /><polyline points="14 2 14 8 20 8" /><line x1="16" y1="13" x2="8" y2="13" /><line x1="16" y1="17" x2="8" y2="17" /><line x1="10" y1="9" x2="8" y2="9" /></svg>
-              Selected Syllabuses
+          <div className="bg-surface-container-lowest border border-black shadow-[3px_3px_0px_#111111] p-6">
+            <h3 className="font-serif text-lg font-bold text-on-surface mb-3 pb-2 border-b border-black">
+              Loaded Curriculum
             </h3>
-            
-            <div className="space-y-3">
+
+            <div className="space-y-2">
               {syllabuses.length === 0 ? (
-                <div className="text-[0.85rem] text-slate-500 italic">No syllabuses loaded.</div>
+                <div className="font-mono text-xs text-secondary italic">No syllabuses linked.</div>
               ) : (
                 syllabuses.map(s => (
-                  <div key={s.id} className="flex items-start gap-2">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="text-green-600 mt-0.5 shrink-0"><polyline points="20 6 9 17 4 12" /></svg>
-                    <span className="text-[0.85rem] font-medium text-slate-700 leading-tight">{s.title}</span>
+                  <div key={s.id} className="flex items-start gap-2 p-2 bg-surface border border-outline-variant/60">
+                    <span className="font-mono text-[#005430] font-bold text-xs mt-0.5">✓</span>
+                    <span className="font-sans text-xs font-medium text-on-surface leading-tight">{s.title}</span>
                   </div>
                 ))
               )}
             </div>
           </div>
         </div>
-        
       </div>
     </div>
   );

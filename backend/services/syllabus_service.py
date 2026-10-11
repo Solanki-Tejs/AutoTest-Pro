@@ -97,6 +97,29 @@ def create_syllabus(class_id: int, title: str, file_ref: str, db: Session) -> di
     )
     row = result.mappings().one()
     db.commit()
+
+    try:
+        from services.notification_service import create_notification
+        cls_row = db.execute(text("SELECT name FROM classes WHERE id = :id"), {"id": class_id}).mappings().first()
+        class_name = cls_row["name"] if cls_row else "your class"
+
+        students = db.execute(
+            text("SELECT student_id FROM class_enrollments WHERE class_id = :class_id AND status = 'approved'"),
+            {"class_id": class_id}
+        ).mappings().all()
+
+        for s in students:
+            create_notification(
+                user_id=s["student_id"],
+                title="New Syllabus Added",
+                message=f"New syllabus '{title}' was uploaded in '{class_name}'.",
+                notification_type="syllabus",
+                link="/student/dashboard?sub=syllabus",
+                db=db
+            )
+    except Exception as e:
+        print(f"[NOTIFICATION ERROR] {e}")
+
     return dict(row)
 
 

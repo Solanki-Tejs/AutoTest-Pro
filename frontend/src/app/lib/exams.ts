@@ -243,6 +243,8 @@ export interface QuestionBank {
     method: string;
     model: string;
     generated_at: string;
+    blueprint_version?: number;
+    syllabus_ids?: string[];
   };
   created_at: string;
   updated_at: string;
@@ -253,6 +255,7 @@ export interface GenerationStatus {
   status: string;
   progress?: number;
   current_section?: string;
+  error?: string;
 }
 
 export async function generatePaper(token: string, examId: string): Promise<GenerationStatus> {
@@ -368,6 +371,7 @@ export interface AnswerGenerationStatus {
   generated_questions: number;
   failed_questions: number;
   progress: number;
+  error?: string;
 }
 
 export async function generateAnswers(token: string, examId: string): Promise<void> {

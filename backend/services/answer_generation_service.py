@@ -16,6 +16,30 @@ OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://127.0.0.1:11434").rstrip(
 OLLAMA_API_URL = f"{OLLAMA_BASE_URL}/api/generate"
 OLLAMA_GENERATION_MODEL = os.getenv("OLLAMA_GENERATION_MODEL", "mistral:7b").strip()
 
+import re
+
+def _clean_mcq_answer(question: dict, raw_key: str | None, raw_text: str | None) -> tuple[str | None, str | None]:
+    if not raw_key:
+        return None, raw_text
+    
+    cleaned_key = str(raw_key).strip().upper()
+    # Extract only single option letter (e.g., A, B, C, D)
+    match = re.search(r'\b([A-Z])\b', cleaned_key)
+    if match:
+        cleaned_key = match.group(1)
+    elif len(cleaned_key) > 0 and cleaned_key[0].isalpha():
+        cleaned_key = cleaned_key[0]
+        
+    options = question.get("options", [])
+    matching_opt = next((opt for opt in options if str(opt.get("id", "")).strip().upper() == cleaned_key), None)
+    
+    if matching_opt:
+        cleaned_text = matching_opt.get("text", raw_text)
+    else:
+        cleaned_text = raw_text
+        
+    return cleaned_key, cleaned_text
+
 def _build_prompt_and_schema_for_answer(question: dict, context: str) -> tuple[str, dict]:
     q_type = question.get("type", "mcq")
     
@@ -45,11 +69,17 @@ Syllabus Context:
 Respond STRICTLY with JSON matching the required schema.
 """
     if q_type == "mcq":
-        prompt += f"\nThe answer_key must be exactly one of the option IDs."
+        prompt += """
+CRITICAL STRICT REQUIREMENTS FOR MCQ:
+- `answer_key` MUST BE STRICTLY AND ONLY THE SINGLE LETTER of the correct option ID (e.g. "A", "B", "C", or "D").
+- DO NOT return 'Option B', DO NOT return 'B: ...', DO NOT include any colon, punctuation or explanations in `answer_key`.
+- `answer_text` MUST BE STRICTLY the exact text of the selected option with NO explanations or justifications.
+"""
         options_text = "\n".join([f"{opt.get('id', '')}: {opt.get('text', '')}" for opt in question.get("options", [])])
         prompt += f"\nOptions:\n{options_text}\n"
 
     return prompt, json_schema
+
 
 def generate_single_answer_with_gemini(question: dict, context: str) -> dict | None:
     gemini_api_key = os.getenv("GEMINI_API_KEY", "").strip()
@@ -168,11 +198,16 @@ def generate_answers_job(exam_id: str, db: Session, mode: str = "all"):
                         retries += 1
                         continue
                     
+                    final_key = llm_output.get("answer_key")
+                    final_text = llm_output.get("answer_text")
+                    if q.get("type") == "mcq":
+                        final_key, final_text = _clean_mcq_answer(q, final_key, final_text)
+
                     valid_ans = {
                         "answer_id": str(uuid.uuid4()),
                         "question_id": q.get("question_id"),
-                        "answer_key": llm_output.get("answer_key"),
-                        "answer_text": llm_output.get("answer_text"),
+                        "answer_key": final_key,
+                        "answer_text": final_text,
                         "answer_type": q.get("type"),
                         "is_edited": False,
                         "is_approved": False,
@@ -210,6 +245,27 @@ def generate_answers_job(exam_id: str, db: Session, mode: str = "all"):
         
         save_answer_bank(new_ab)
         set_answer_generation_status(exam_id, "generated", progress=100)
+
+        # Notify Teacher
+        try:
+            from services.notification_service import create_notification
+            from sqlalchemy import text
+            ex_row = db.execute(
+                text("SELECT c.teacher_id, e.title FROM exams e JOIN classes c ON e.class_id = c.id WHERE e.id = :id"),
+                {"id": exam_id}
+            ).mappings().first()
+            if ex_row:
+                create_notification(
+                    user_id=ex_row["teacher_id"],
+                    title="Answer Key Generated",
+                    message=f"Official answer key for '{ex_row['title']}' has been generated. Ready for review.",
+                    notification_type="exam",
+                    link=f"/teacher/exams/{exam_id}/answers",
+                    db=db
+                )
+        except Exception as notif_err:
+            print(f"[NOTIFICATION ERROR] {notif_err}")
+
         
     except Exception as e:
         print(f"Answer generation failed: {e}")
@@ -259,9 +315,14 @@ def regenerate_single_answer(exam_id: str, answer_id: str, db: Session) -> dict 
                 retries += 1
                 continue
             
+            final_key = llm_output.get("answer_key")
+            final_text = llm_output.get("answer_text")
+            if target_q.get("type") == "mcq":
+                final_key, final_text = _clean_mcq_answer(target_q, final_key, final_text)
+
             valid_ans = target_ans.copy()
-            valid_ans["answer_key"] = llm_output.get("answer_key")
-            valid_ans["answer_text"] = llm_output.get("answer_text")
+            valid_ans["answer_key"] = final_key
+            valid_ans["answer_text"] = final_text
             valid_ans["is_edited"] = False
             valid_ans["is_stale"] = False
             valid_ans["updated_at"] = datetime.now(timezone.utc)

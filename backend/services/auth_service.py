@@ -134,4 +134,35 @@ def authenticate_user(email: str, password: str, db: Session):
 
     return user
 
+
+def update_password_by_email(email: str, new_password: str, db: Session) -> bool:
+    query = text("""
+        UPDATE users
+        SET password_hash = :hash
+        WHERE email = :email
+        RETURNING id
+    """)
+    result = db.execute(query, {
+        "email": email.lower().strip(),
+        "hash": hash_password(new_password)
+    })
+    db.commit()
+    return bool(result.first())
+
+
+def update_password_by_id(user_id: int, new_password: str, db: Session) -> bool:
+    query = text("""
+        UPDATE users
+        SET password_hash = :hash
+        WHERE id = :id
+        RETURNING id
+    """)
+    result = db.execute(query, {
+        "id": user_id,
+        "hash": hash_password(new_password)
+    })
+    db.commit()
+    return bool(result.first())
+
+
     

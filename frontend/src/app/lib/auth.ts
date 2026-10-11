@@ -29,12 +29,13 @@ export async function registerUser(
   name: string,
   email: string,
   password: string,
-  role: UserRole
+  role: UserRole,
+  otp?: string
 ): Promise<RegisterResponse> {
   const res = await fetch(`${BASE_URL}/api/auth/register`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ name, email, password, role }),
+    body: JSON.stringify({ name, email, password, role, otp }),
   });
 
   if (!res.ok) {
@@ -47,6 +48,70 @@ export async function registerUser(
     throw new Error(data?.detail ?? "Registration failed. Please try again.");
   }
 
+  return res.json();
+}
+
+// ─── OTP & Password Management ───────────────────────────────────────────────
+
+export async function sendOtp(email: string, purpose: string): Promise<{ status: string; message: string }> {
+  const res = await fetch(`${BASE_URL}/api/auth/send-otp`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email, purpose }),
+  });
+
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data?.detail ?? "Failed to send verification code.");
+  }
+  return res.json();
+}
+
+export async function verifyOtp(email: string, otp: string, purpose: string): Promise<{ status: string; message: string }> {
+  const res = await fetch(`${BASE_URL}/api/auth/verify-otp`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email, otp, purpose }),
+  });
+
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data?.detail ?? "Invalid verification code.");
+  }
+  return res.json();
+}
+
+export async function forgotPassword(email: string, otp: string, new_password: string): Promise<{ status: string; message: string }> {
+  const res = await fetch(`${BASE_URL}/api/auth/forgot-password`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email, otp, new_password }),
+  });
+
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data?.detail ?? "Failed to reset password.");
+  }
+  return res.json();
+}
+
+export async function updatePassword(
+  token: string,
+  payload: { current_password?: string; new_password: string; otp?: string; email?: string }
+): Promise<{ status: string; message: string }> {
+  const res = await fetch(`${BASE_URL}/api/auth/update-password`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify(payload),
+  });
+
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data?.detail ?? "Failed to update password.");
+  }
   return res.json();
 }
 

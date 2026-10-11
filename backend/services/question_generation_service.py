@@ -268,6 +268,25 @@ def generate_exam_paper_job(exam_id: str, db: Session):
         
         save_question_bank(new_paper)
         set_generation_status(exam_id, "generated", progress=100)
+
+        # Notify Teacher
+        try:
+            from services.notification_service import create_notification
+            ex_row = db.execute(
+                text("SELECT c.teacher_id, e.title FROM exams e JOIN classes c ON e.class_id = c.id WHERE e.id = :id"),
+                {"id": exam_id}
+            ).mappings().first()
+            if ex_row:
+                create_notification(
+                    user_id=ex_row["teacher_id"],
+                    title="Exam Paper Generated",
+                    message=f"Question paper for '{ex_row['title']}' has been generated. Ready for review.",
+                    notification_type="exam",
+                    link=f"/teacher/exams/{exam_id}/paper",
+                    db=db
+                )
+        except Exception as notif_err:
+            print(f"[NOTIFICATION ERROR] {notif_err}")
         
     except Exception as e:
         print(f"Paper generation failed: {e}")

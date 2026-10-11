@@ -17,6 +17,9 @@ def start_paper_generation(exam_id: str, background_tasks: BackgroundTasks, db: 
     exam = exam_service.get_exam_by_id(exam_id, db)
     if not exam or not exam_service.teacher_can_access_exam(int(current_user["sub"]), exam_id, db):
         raise HTTPException(status_code=403, detail="Not authorized to access this exam")
+
+    if exam.get("status") == "published":
+        raise HTTPException(status_code=400, detail="Cannot generate questions for a published exam")
         
     current_status = question_bank_service.get_generation_status(exam_id)
     if current_status and current_status.get("status") == "generating":
@@ -49,6 +52,10 @@ def get_question_bank(exam_id: str, db: Session = Depends(get_db), current_user:
 def approve_question_bank(exam_id: str, db: Session = Depends(get_db), current_user: dict = Depends(get_current_user)):
     if current_user["role"] != "teacher" or not exam_service.teacher_can_access_exam(int(current_user["sub"]), exam_id, db):
         raise HTTPException(status_code=403, detail="Not authorized")
+
+    exam = exam_service.get_exam_by_id(exam_id, db)
+    if not exam or exam.get("status") == "published":
+        raise HTTPException(status_code=400, detail="Cannot approve question bank for a published exam")
         
     qb = question_bank_service.get_active_question_bank(exam_id)
     if not qb:

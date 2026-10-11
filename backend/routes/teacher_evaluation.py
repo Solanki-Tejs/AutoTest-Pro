@@ -24,7 +24,7 @@ def get_teacher_exam_attempts(exam_id: str, db: Session = Depends(get_db), curre
         raise HTTPException(status_code=403, detail="Not authorized")
         
     query = text("""
-        SELECT a.id, a.student_id, u.email as student_email, a.started_at, a.completed_at, a.status, a.total_marks, a.max_marks, a.adjustment_marks
+        SELECT a.id, a.student_id, u.email as student_email, a.started_at, a.completed_at, a.status, a.total_marks, a.max_marks, a.adjustment_marks, a.result_published_at
         FROM exam_attempts a
         JOIN users u ON a.student_id = u.id
         WHERE a.exam_id = :exam_id
@@ -97,7 +97,7 @@ def get_attempt_evaluation(attempt_id: str, db: Session = Depends(get_db), curre
 def override_marks(attempt_id: str, question_id: str, payload: OverrideRequest, db: Session = Depends(get_db), current_user: dict = Depends(require_roles("teacher"))):
     user_id = int(current_user["sub"])
     auth_query = text("""
-        SELECT e.id as exam_id FROM exam_attempts a 
+        SELECT e.id as exam_id, a.result_published_at FROM exam_attempts a 
         JOIN exams e ON a.exam_id = e.id 
         JOIN classes c ON e.class_id = c.id 
         WHERE a.id = :attempt_id AND c.teacher_id = :teacher_id
@@ -106,6 +106,9 @@ def override_marks(attempt_id: str, question_id: str, payload: OverrideRequest, 
     if not res:
         raise HTTPException(status_code=403, detail="Not authorized")
         
+    if res["result_published_at"] is not None:
+        raise HTTPException(status_code=400, detail="Cannot modify marks: results have already been published and finalized.")
+
     if not payload.reason:
         raise HTTPException(status_code=400, detail="Reason is required for override")
         
@@ -157,14 +160,18 @@ class GlobalMarksRequest(BaseModel):
 def update_global_marks(attempt_id: str, payload: GlobalMarksRequest, db: Session = Depends(get_db), current_user: dict = Depends(require_roles("teacher"))):
     user_id = int(current_user["sub"])
     auth_query = text("""
-        SELECT 1 FROM exam_attempts a 
+        SELECT a.result_published_at FROM exam_attempts a 
         JOIN exams e ON a.exam_id = e.id 
         JOIN classes c ON e.class_id = c.id 
         WHERE a.id = :attempt_id AND c.teacher_id = :teacher_id
     """)
-    if not db.execute(auth_query, {"attempt_id": attempt_id, "teacher_id": user_id}).first():
+    res = db.execute(auth_query, {"attempt_id": attempt_id, "teacher_id": user_id}).mappings().first()
+    if not res:
         raise HTTPException(status_code=403, detail="Not authorized")
         
+    if res["result_published_at"] is not None:
+        raise HTTPException(status_code=400, detail="Cannot modify adjustment: results have already been published and finalized.")
+
     update_query = text("UPDATE exam_attempts SET adjustment_marks = :adj WHERE id = :attempt_id")
     db.execute(update_query, {"adj": payload.adjustment, "attempt_id": attempt_id})
     db.commit()
@@ -175,15 +182,18 @@ def update_global_marks(attempt_id: str, payload: GlobalMarksRequest, db: Sessio
 def approve_review(attempt_id: str, db: Session = Depends(get_db), current_user: dict = Depends(require_roles("teacher"))):
     user_id = int(current_user["sub"])
     auth_query = text("""
-        SELECT 1 FROM exam_attempts a 
+        SELECT a.result_published_at FROM exam_attempts a 
         JOIN exams e ON a.exam_id = e.id 
         JOIN classes c ON e.class_id = c.id 
         WHERE a.id = :attempt_id AND c.teacher_id = :teacher_id
     """)
-    if not db.execute(auth_query, {"attempt_id": attempt_id, "teacher_id": user_id}).first():
+    res = db.execute(auth_query, {"attempt_id": attempt_id, "teacher_id": user_id}).mappings().first()
+    if not res:
         raise HTTPException(status_code=403, detail="Not authorized")
         
-    # Maybe we can set a flag `review_approved` in PG or Mongo
+    if res["result_published_at"] is not None:
+        raise HTTPException(status_code=400, detail="Cannot approve review: results have already been published and finalized.")
+
     mongo_db = get_mongo_db()
     mongo_db.exam_attempt_answers.update_one(
         {"attempt_id": attempt_id},
@@ -191,14 +201,61 @@ def approve_review(attempt_id: str, db: Session = Depends(get_db), current_user:
     )
     return {"status": "approved"}
 
+from services.notification_service import create_notification
+
 @router.post("/exams/{exam_id}/results/publish")
 def publish_results(exam_id: str, db: Session = Depends(get_db), current_user: dict = Depends(require_roles("teacher"))):
     user_id = int(current_user["sub"])
-    auth_query = text("SELECT 1 FROM exams e JOIN classes c ON e.class_id = c.id WHERE e.id = :exam_id AND c.teacher_id = :teacher_id")
-    if not db.execute(auth_query, {"exam_id": exam_id, "teacher_id": user_id}).first():
-        raise HTTPException(status_code=403, detail="Not authorized")
+    
+    # 1. Verify exam ownership
+    exam_query = text("""
+        SELECT e.id, e.title, e.end_time, c.name as class_name 
+        FROM exams e 
+        JOIN classes c ON e.class_id = c.id 
+        WHERE e.id = :exam_id AND c.teacher_id = :teacher_id
+    """)
+    exam = db.execute(exam_query, {"exam_id": exam_id, "teacher_id": user_id}).mappings().first()
+    if not exam:
+        raise HTTPException(status_code=403, detail="Not authorized or exam not found")
         
-    # Update all attempts for this exam
+    # 2. Verify exam due date / end time has passed
+    now = datetime.now(timezone.utc)
+    if exam["end_time"]:
+        end_time = exam["end_time"].replace(tzinfo=timezone.utc) if exam["end_time"].tzinfo is None else exam["end_time"]
+        if now < end_time:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Cannot publish results before the exam due date / end time ({end_time.strftime('%Y-%m-%d %H:%M:%S UTC')}) has passed."
+            )
+
+    # 3. Verify all student attempts are evaluated
+    pending_attempts = db.execute(
+        text("SELECT COUNT(*) FROM exam_attempts WHERE exam_id = :exam_id AND status != 'evaluated'"),
+        {"exam_id": exam_id}
+    ).scalar() or 0
+    if pending_attempts > 0:
+        raise HTTPException(
+            status_code=400, 
+            detail=f"Cannot publish results: {pending_attempts} student paper(s) are not yet evaluated. All papers must be fully evaluated before publishing."
+        )
+
+    # Check total attempts
+    total_attempts = db.execute(
+        text("SELECT COUNT(*) FROM exam_attempts WHERE exam_id = :exam_id"),
+        {"exam_id": exam_id}
+    ).scalar() or 0
+    if total_attempts == 0:
+        raise HTTPException(status_code=400, detail="Cannot publish results: no student attempts exist for this exam.")
+
+    # 4. Check if already published
+    already_published = db.execute(
+        text("SELECT COUNT(*) FROM exam_attempts WHERE exam_id = :exam_id AND result_published_at IS NOT NULL"),
+        {"exam_id": exam_id}
+    ).scalar() or 0
+    if already_published == total_attempts and total_attempts > 0:
+        raise HTTPException(status_code=400, detail="Results for this exam have already been published.")
+
+    # 5. Update all attempts for this exam
     update_query = text("""
         UPDATE exam_attempts 
         SET result_published_at = NOW() 
@@ -207,4 +264,37 @@ def publish_results(exam_id: str, db: Session = Depends(get_db), current_user: d
     db.execute(update_query, {"exam_id": exam_id})
     db.commit()
     
+    # 6. Send notifications
+    # Notify Teacher
+    try:
+        create_notification(
+            user_id=user_id,
+            title="Results Published",
+            message=f"Results for '{exam['title']}' have been officially published to candidates.",
+            notification_type="result",
+            link=f"/teacher/exams/{exam_id}/results",
+            db=db
+        )
+    except Exception as e:
+        print(f"[NOTIFICATION ERROR] {e}")
+
+    # Notify Students who submitted the exam
+    try:
+        student_rows = db.execute(
+            text("SELECT DISTINCT student_id FROM exam_attempts WHERE exam_id = :exam_id"),
+            {"exam_id": exam_id}
+        ).mappings().all()
+        for s in student_rows:
+            create_notification(
+                user_id=s["student_id"],
+                title="Results Published",
+                message=f"Your official result and diagnostic transcript for '{exam['title']}' is now published!",
+                notification_type="result",
+                link=f"/student/exams/{exam_id}/result",
+                db=db
+            )
+    except Exception as e:
+        print(f"[NOTIFICATION ERROR] {e}")
+        
     return {"status": "published"}
+

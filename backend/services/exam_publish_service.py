@@ -117,5 +117,41 @@ def validate_and_publish_exam(exam_id: str, teacher_id: int, start_time: datetim
         ), 
         db
     )
+
+    # 6. Send notifications
+    try:
+        from services.notification_service import create_notification
+        from sqlalchemy import text
+        # Notify Teacher
+        create_notification(
+            user_id=teacher_id,
+            title="Exam Published",
+            message=f"Exam '{exam['title']}' has been published and scheduled.",
+            notification_type="exam",
+            link=f"/teacher/exams/{exam_id}/publish",
+            db=db
+        )
+
+        # Notify enrolled students
+        student_rows = db.execute(
+            text("SELECT student_id FROM class_enrollments WHERE class_id = :class_id AND status = 'approved'"),
+            {"class_id": exam["class_id"]}
+        ).mappings().all()
+
+        start_str = exam["start_time"].strftime("%b %d, %H:%M UTC") if hasattr(exam["start_time"], "strftime") else str(exam["start_time"])
+        end_str = exam["end_time"].strftime("%b %d, %H:%M UTC") if hasattr(exam["end_time"], "strftime") else str(exam["end_time"])
+
+        for s in student_rows:
+            create_notification(
+                user_id=s["student_id"],
+                title="Upcoming Exam Published",
+                message=f"New exam '{exam['title']}' has been published! Window: {start_str} - {end_str}.",
+                notification_type="exam",
+                link=f"/student/exams/{exam_id}",
+                db=db
+            )
+    except Exception as e:
+        print(f"[NOTIFICATION ERROR] {e}")
     
     return updated_exam
+

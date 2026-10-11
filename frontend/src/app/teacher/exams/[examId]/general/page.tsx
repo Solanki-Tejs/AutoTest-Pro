@@ -113,55 +113,98 @@ export default function GeneralStepPage(props: { params: Promise<{ examId: strin
   };
 
   if (loading) {
-    return <div className="py-20 text-center text-slate-500">Loading General Settings...</div>;
+    return (
+      <div className="py-20 text-center font-sans">
+        <div className="w-10 h-10 border-4 border-[#c4c5da] border-t-[#0047ff] animate-spin mx-auto mb-4" />
+        <span className="font-mono text-xs text-secondary uppercase tracking-widest block">
+          Loading General Configuration...
+        </span>
+      </div>
+    );
   }
 
   return (
-    <div className="animate-fade-in">
-      <div className="flex items-center justify-between mb-6">
+    <div className="space-y-6">
+      {/* Editorial Header */}
+      <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 border-b border-black pb-6">
         <div>
-          <h2 className="text-2xl font-bold text-slate-900 tracking-tight">General Details</h2>
-          <p className="text-slate-600 text-[0.9rem]">Configure basic details for this exam</p>
+          <div className="flex items-center gap-2 mb-1.5">
+            <span className="px-2 py-0.5 bg-black text-white font-mono text-[10px] font-bold tracking-widest uppercase">
+              STEP 01
+            </span>
+            <span className="font-mono text-xs text-[#0047ff] font-bold uppercase tracking-wider">
+              GENERAL CONFIGURATION
+            </span>
+          </div>
+          <h2 className="font-serif text-3xl md:text-4xl font-normal text-on-surface tracking-tight">
+            General Details
+          </h2>
+          <p className="font-sans text-sm text-secondary mt-1">
+            Configure primary attributes and runtime parameters for this examination.
+          </p>
         </div>
         
-        <div className="text-sm font-medium">
-          {saveStatus === "saving" && <span className="text-slate-500 flex items-center gap-2"><div className="w-3 h-3 rounded-full border-2 border-slate-300 border-t-[#2563eb] animate-spin"></div> Saving...</span>}
-          {saveStatus === "saved" && <span className="text-green-600">✓ Saved</span>}
-          {saveStatus === "error" && <span className="text-red-500">⚠ Failed to save</span>}
+        <div className="flex items-center gap-2">
+          {saveStatus === "saving" && (
+            <span className="font-mono text-xs text-secondary flex items-center gap-1.5 px-3 py-1 bg-surface-container border border-outline-variant">
+              <span className="w-2 h-2 rounded-full border border-black border-t-[#0047ff] animate-spin" />
+              SAVING...
+            </span>
+          )}
+          {saveStatus === "saved" && (
+            <span className="font-mono text-xs text-[#005430] font-bold px-3 py-1 bg-[#e8f5e9] border border-[#81c784]/60">
+              ✓ AUTO-SAVED
+            </span>
+          )}
+          {saveStatus === "error" && (
+            <span className="font-mono text-xs text-[#ba1a1a] font-bold px-3 py-1 bg-[#ffdad6] border border-[#ba1a1a]/40">
+              ⚠ FAILED TO SAVE
+            </span>
+          )}
         </div>
       </div>
 
-      <div className="bg-white p-8 rounded-xl shadow-sm border border-slate-200">
+      {/* Brutalist Box Form Container */}
+      <div className="bg-surface-container-lowest p-6 md:p-8 border border-black shadow-[4px_4px_0px_#111111]">
         {examStatus === "published" && (
-          <div className="mb-6 p-4 bg-amber-50 text-amber-800 border border-amber-200 rounded-md font-semibold text-[0.9rem]">
-            This exam is published. General details cannot be modified.
+          <div className="mb-6 p-4 bg-amber-50 border border-amber-300 font-mono text-xs text-amber-900 flex items-center gap-2">
+            <span className="material-symbols-outlined text-[18px]">lock</span>
+            <span>THIS EXAM IS PUBLISHED. CORE ATTRIBUTES ARE LOCKED AGAINST MODIFICATION.</span>
           </div>
         )}
         {error && (
-          <div className="mb-6 p-4 bg-red-50 text-red-600 border border-red-200 rounded-md font-semibold text-[0.9rem]">
-            {error}
+          <div className="mb-6 p-4 bg-[#ffdad6] border border-[#ba1a1a] text-[#93000a] font-mono text-xs flex items-center gap-2">
+            <span className="material-symbols-outlined text-[18px]">error</span>
+            <span>{error}</span>
           </div>
         )}
+
         <div className="grid grid-cols-1 gap-6 mb-8">
+          {/* Exam Title */}
           <div>
-            <label className="block text-[0.85rem] font-bold text-slate-700 mb-2">Exam Title</label>
+            <label className="block font-mono text-xs font-bold uppercase tracking-wider text-on-surface mb-2">
+              Exam Title <span className="text-[#0047ff]">*</span>
+            </label>
             <input 
               required 
               disabled={examStatus === "published"}
               type="text" 
               placeholder="e.g. Database Management System Mid-Term"
-              className="w-full px-4 py-2 border border-slate-300 rounded-md focus:border-[#2563eb] focus:ring-1 focus:ring-[#2563eb] outline-none transition-all disabled:bg-slate-100 disabled:text-slate-500"
+              className="w-full px-4 py-2.5 bg-surface-container-lowest border border-black focus:border-[#0047ff] focus:ring-1 focus:ring-[#0047ff] outline-none font-sans text-sm disabled:bg-[#efeded] disabled:text-[#747688] transition-colors"
               value={formData.title} 
               onChange={e => handleChange("title", e.target.value)} 
             />
           </div>
           
+          {/* Assigned Class */}
           <div>
-            <label className="block text-[0.85rem] font-bold text-slate-700 mb-2">Class</label>
+            <label className="block font-mono text-xs font-bold uppercase tracking-wider text-on-surface mb-2">
+              Target Classroom <span className="text-[#0047ff]">*</span>
+            </label>
             <select 
               required
               disabled={examStatus === "published"}
-              className="w-full px-4 py-2 border border-slate-300 rounded-md focus:border-[#2563eb] focus:ring-1 focus:ring-[#2563eb] outline-none transition-all disabled:bg-slate-100 disabled:text-slate-500"
+              className="w-full px-4 py-2.5 bg-surface-container-lowest border border-black focus:border-[#0047ff] focus:ring-1 focus:ring-[#0047ff] outline-none font-sans text-sm disabled:bg-[#efeded] disabled:text-[#747688] transition-colors cursor-pointer"
               value={formData.class_id} 
               onChange={e => handleChange("class_id", e.target.value)}
             >
@@ -171,10 +214,13 @@ export default function GeneralStepPage(props: { params: Promise<{ examId: strin
             </select>
           </div>
           
-          <div className="grid grid-cols-3 gap-4">
+          {/* Triplet Grid: Marks, Duration, Difficulty */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
             <div>
               <div className="flex items-center justify-between mb-2">
-                <label className="block text-[0.85rem] font-bold text-slate-700">Total Marks</label>
+                <label className="block font-mono text-xs font-bold uppercase tracking-wider text-on-surface">
+                  Total Marks <span className="text-[#0047ff]">*</span>
+                </label>
                 {hasBlueprint && isTotalMarksLocked && examStatus !== "published" && (
                   <button
                     onClick={() => {
@@ -182,9 +228,9 @@ export default function GeneralStepPage(props: { params: Promise<{ examId: strin
                         setIsTotalMarksLocked(false);
                       }
                     }}
-                    className="text-xs text-[#2563eb] hover:text-[#1d4ed8] font-bold uppercase tracking-wider"
+                    className="font-mono text-[10px] text-[#0047ff] hover:underline font-bold uppercase tracking-widest cursor-pointer"
                   >
-                    Unlock
+                    [UNLOCK]
                   </button>
                 )}
               </div>
@@ -193,46 +239,55 @@ export default function GeneralStepPage(props: { params: Promise<{ examId: strin
                 disabled={examStatus === "published" || (hasBlueprint && isTotalMarksLocked)}
                 type="number" 
                 min="1"
-                className="w-full px-4 py-2 border border-slate-300 rounded-md focus:border-[#2563eb] focus:ring-1 focus:ring-[#2563eb] outline-none transition-all disabled:bg-slate-100 disabled:text-slate-500"
+                className="w-full px-4 py-2.5 bg-surface-container-lowest border border-black focus:border-[#0047ff] focus:ring-1 focus:ring-[#0047ff] outline-none font-mono text-sm font-bold disabled:bg-[#efeded] disabled:text-[#747688] transition-colors"
                 value={formData.total_marks} 
                 onChange={e => handleChange("total_marks", e.target.value)} 
               />
             </div>
+
             <div>
-              <label className="block text-[0.85rem] font-bold text-slate-700 mb-2">Duration (mins)</label>
+              <label className="block font-mono text-xs font-bold uppercase tracking-wider text-on-surface mb-2">
+                Duration (mins) <span className="text-[#0047ff]">*</span>
+              </label>
               <input 
                 required 
                 disabled={examStatus === "published"}
                 type="number" 
                 min="1"
-                className="w-full px-4 py-2 border border-slate-300 rounded-md focus:border-[#2563eb] focus:ring-1 focus:ring-[#2563eb] outline-none transition-all disabled:bg-slate-100 disabled:text-slate-500"
+                className="w-full px-4 py-2.5 bg-surface-container-lowest border border-black focus:border-[#0047ff] focus:ring-1 focus:ring-[#0047ff] outline-none font-mono text-sm font-bold disabled:bg-[#efeded] disabled:text-[#747688] transition-colors"
                 value={formData.duration_minutes} 
                 onChange={e => handleChange("duration_minutes", e.target.value)} 
               />
             </div>
+
             <div>
-              <label className="block text-[0.85rem] font-bold text-slate-700 mb-2">Difficulty</label>
+              <label className="block font-mono text-xs font-bold uppercase tracking-wider text-on-surface mb-2">
+                Difficulty Level <span className="text-[#0047ff]">*</span>
+              </label>
               <select 
                 required
                 disabled={examStatus === "published"}
-                className="w-full px-4 py-2 border border-slate-300 rounded-md focus:border-[#2563eb] focus:ring-1 focus:ring-[#2563eb] outline-none transition-all disabled:bg-slate-100 disabled:text-slate-500"
+                className="w-full px-4 py-2.5 bg-surface-container-lowest border border-black focus:border-[#0047ff] focus:ring-1 focus:ring-[#0047ff] outline-none font-sans text-sm disabled:bg-[#efeded] disabled:text-[#747688] transition-colors cursor-pointer"
                 value={formData.difficulty} 
                 onChange={e => handleChange("difficulty", e.target.value)}
               >
-                <option value="easy">Easy</option>
-                <option value="medium">Medium</option>
-                <option value="hard">Hard</option>
+                <option value="easy">Easy (Foundational)</option>
+                <option value="medium">Medium (Standard)</option>
+                <option value="hard">Hard (Advanced)</option>
               </select>
             </div>
           </div>
         </div>
 
-        <div className="flex justify-end pt-6 border-t border-slate-200 mt-6">
+        {/* Footer Navigation */}
+        <div className="flex justify-between items-center pt-6 border-t border-black mt-8">
+          <span className="font-mono text-xs text-secondary">AUTO-SAVED CHANGES</span>
           <button 
             onClick={() => router.push(`/teacher/exams/${params.examId}/syllabus`)}
-            className="px-6 py-2.5 bg-[#2563eb] text-white font-bold text-[0.95rem] rounded-md hover:bg-[#1d4ed8] transition-colors"
+            className="px-8 py-3 bg-[#0047ff] hover:bg-black text-white font-mono text-xs uppercase tracking-wider font-bold border border-black shadow-[3px_3px_0px_#111111] active:translate-x-[1px] active:translate-y-[1px] active:shadow-none transition-all cursor-pointer inline-flex items-center gap-2"
           >
-            Continue to Syllabus &rarr;
+            <span>Continue to Syllabus</span>
+            <span className="material-symbols-outlined text-[16px]">arrow_forward</span>
           </button>
         </div>
       </div>

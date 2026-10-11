@@ -1,7 +1,6 @@
 "use client";
 
 import Link from "next/link";
-import Image from "next/image";
 import { useState } from "react";
 
 export default function LandingPage() {
@@ -12,12 +11,10 @@ export default function LandingPage() {
       {/* Top Border / Nav Bar placeholder */}
       <div className="h-16 border-b border-grid flex items-center justify-between px-8 bg-surface">
         <div className="flex items-center gap-3">
-          <Image
-            src="/logo.png"
+          <img
+            src="/logo_bg_removed.png"
             alt="AutoTest Pro Logo"
-            width={24}
-            height={24}
-            className="object-contain"
+            className="h-6 w-auto object-contain"
           />
           <span className="font-mono text-sm tracking-wider uppercase text-graphite font-semibold">
             AutoTest Pro

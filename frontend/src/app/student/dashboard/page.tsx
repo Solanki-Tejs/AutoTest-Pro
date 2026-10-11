@@ -11,7 +11,10 @@ import {
 } from "@/app/lib/classes";
 import { fetchSyllabusList, downloadSyllabus, viewSyllabus, SyllabusItem } from "@/app/lib/syllabus";
 import { StudentExam, getAllStudentExams } from "@/app/lib/student_exams";
+import UpdatePasswordCard from "@/app/components/UpdatePasswordCard";
+import NotificationBell from "@/app/components/NotificationBell";
 import { useRouter } from "next/navigation";
+import { toast } from "sonner";
 
 type Tab = "join" | "my-classes" | "profile";
 
@@ -25,6 +28,8 @@ export default function StudentDashboard() {
   const [selectedClassId, setSelectedClassId] = useState<string | null>(null);
   const [selectedClass, setSelectedClass] = useState<Membership | null>(null);
 
+  const [workspaceSubTab, setWorkspaceSubTab] = useState<"exams" | "syllabus">("exams");
+
   const [memberships, setMemberships] = useState<Membership[]>([]);
   const [memLoading, setMemLoading] = useState(false);
 
@@ -34,7 +39,16 @@ export default function StudentDashboard() {
   const [previewLoading, setPreviewLoading] = useState(false);
   const [previewError, setPreviewError] = useState("");
   const [joinLoading, setJoinLoading] = useState(false);
-  const [joinResult, setJoinResult] = useState<{ msg: string; type: "success" | "error" | "info" } | null>(null);
+  const [joinSuccess, setJoinSuccess] = useState(false);
+
+  const [classSearch, setClassSearch] = useState("");
+  const [classTab, setClassTab] = useState<"active" | "pending">("active");
+
+  // Custom Invite URL modal, profile dropdown, and class counts
+  const [urlModalOpen, setUrlModalOpen] = useState(false);
+  const [inviteUrlInput, setInviteUrlInput] = useState("");
+  const [profileMenuOpen, setProfileMenuOpen] = useState(false);
+  const [classStats, setClassStats] = useState<Record<number, { examsCount: number; syllabusCount: number }>>({});
 
   useEffect(() => {
     const u = getStoredUser();
@@ -49,10 +63,30 @@ export default function StudentDashboard() {
 
   useEffect(() => {
     setMounted(true);
+    const searchParams = new URLSearchParams(window.location.search);
+    const qTab = searchParams.get("tab") as Tab | null;
     const savedTab = sessionStorage.getItem("studentDashTab") as Tab | null;
-    if (savedTab) setTab(savedTab);
+    if (qTab && ["join", "my-classes", "profile"].includes(qTab)) {
+      setTab(qTab);
+    } else if (savedTab) {
+      setTab(savedTab);
+    }
+
+    const qClassId = searchParams.get("classId");
     const savedClassId = sessionStorage.getItem("studentDashClassId");
-    if (savedClassId) setSelectedClassId(savedClassId);
+    if (qClassId) {
+      setSelectedClassId(qClassId);
+    } else if (savedClassId) {
+      setSelectedClassId(savedClassId);
+    }
+
+    const qSubTab = searchParams.get("sub") as "exams" | "syllabus" | null;
+    const savedSubTab = sessionStorage.getItem("studentDashSubTab") as "exams" | "syllabus" | null;
+    if (qSubTab && ["exams", "syllabus"].includes(qSubTab)) {
+      setWorkspaceSubTab(qSubTab);
+    } else if (savedSubTab && ["exams", "syllabus"].includes(savedSubTab)) {
+      setWorkspaceSubTab(savedSubTab);
+    }
   }, []);
 
   useEffect(() => {
@@ -70,14 +104,20 @@ export default function StudentDashboard() {
     }
   }, [selectedClassId, memberships]);
 
-  function openClass(mem: Membership) {
+  function openClass(mem: Membership, sub: "exams" | "syllabus" = "exams") {
     setSelectedClassId(String(mem.class_id));
-    if (mounted) sessionStorage.setItem("studentDashClassId", String(mem.class_id));
+    setWorkspaceSubTab(sub);
+    if (mounted) {
+      sessionStorage.setItem("studentDashClassId", String(mem.class_id));
+      sessionStorage.setItem("studentDashSubTab", sub);
+    }
   }
 
   function closeClass() {
     setSelectedClassId(null);
-    if (mounted) sessionStorage.removeItem("studentDashClassId");
+    if (mounted) {
+      sessionStorage.removeItem("studentDashClassId");
+    }
   }
 
   const loadMemberships = useCallback(async () => {
@@ -97,37 +137,129 @@ export default function StudentDashboard() {
     if (token) loadMemberships();
   }, [token, loadMemberships]);
 
-  async function handlePreview(e: React.FormEvent) {
-    e.preventDefault();
-    if (!token || !codeInput.trim()) return;
+  useEffect(() => {
+    if (!token || memberships.length === 0) return;
+    const approved = memberships.filter((m) => m.status === "approved");
+    if (approved.length === 0) return;
+
+    let cancelled = false;
+    getAllStudentExams(token)
+      .then(async (exams) => {
+        if (cancelled) return;
+        const stats: Record<number, { examsCount: number; syllabusCount: number }> = {};
+        await Promise.all(
+          approved.map(async (cls) => {
+            const cExams = exams.filter((e) => e.class_id === cls.class_id);
+            let sylCount = 0;
+            try {
+              const sList = await fetchSyllabusList(cls.class_id);
+              sylCount = sList.length;
+            } catch {
+              sylCount = 0;
+            }
+            stats[cls.class_id] = {
+              examsCount: cExams.length,
+              syllabusCount: sylCount,
+            };
+          })
+        );
+        if (!cancelled) setClassStats(stats);
+      })
+      .catch(() => {});
+
+    return () => {
+      cancelled = true;
+    };
+  }, [token, memberships]);
+
+  const handleCodeInput = (val: string) => {
+    let clean = val.toUpperCase().replace(/[^A-Z0-9]/g, "");
+    if (clean.length > 8) {
+      clean = clean.slice(0, 8);
+    }
+    if (clean.length > 4) {
+      clean = clean.slice(0, 4) + "-" + clean.slice(4, 8);
+    }
+    setCodeInput(clean);
+    setPreview(null);
+    setPreviewError("");
+    setJoinSuccess(false);
+
+    const raw = clean.replace(/-/g, "");
+    if (raw.length === 8 && token) {
+      triggerLookup(raw);
+    }
+  };
+
+  const triggerLookup = async (codeToSearch: string) => {
+    if (!token || !codeToSearch.trim()) return;
     setPreviewLoading(true);
     setPreviewError("");
     setPreview(null);
-    setJoinResult(null);
     try {
-      const cls = await previewClassByCode(token, codeInput.trim());
-      setPreview(cls);
-    } catch (err: unknown) {
-      setPreviewError(err instanceof Error ? err.message : "Failed to look up code");
+      const res = await previewClassByCode(token, codeToSearch.trim().toUpperCase());
+      setPreview(res);
+      toast.success("Class found!");
+    } catch (e: unknown) {
+      const err = e instanceof Error ? e.message : "Class not found";
+      setPreviewError(err);
+      toast.error(err);
     } finally {
       setPreviewLoading(false);
     }
+  };
+
+  async function pasteFromClipboard() {
+    try {
+      const text = await navigator.clipboard.readText();
+      if (text) {
+        handleCodeInput(text.trim());
+      }
+    } catch {
+      toast.info("Please paste the code directly into the input.");
+    }
   }
 
-  async function handleJoin() {
+  function promptInviteUrl() {
+    setUrlModalOpen(true);
+  }
+
+  const handleInviteUrlSubmit = (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    const cleanUrl = inviteUrlInput.trim();
+    if (!cleanUrl) return;
+    let detected = "";
+    const joinPathMatch = cleanUrl.match(/\/join\/([A-Za-z0-9-]+)/i);
+    if (joinPathMatch) {
+      detected = joinPathMatch[1];
+    } else {
+      const match = cleanUrl.match(/[A-Za-z0-9]{4}-?[A-Za-z0-9]{4}/) || cleanUrl.match(/[A-Za-z0-9]{8}/);
+      if (match) detected = match[0];
+    }
+    if (detected) {
+      handleCodeInput(detected);
+      setUrlModalOpen(false);
+      setInviteUrlInput("");
+      toast.success(`Class code detected: ${detected.toUpperCase()}`);
+    } else {
+      toast.error("Valid class code could not be detected from that URL.");
+    }
+  };
+
+  async function handleEnrollment() {
     if (!token || !preview) return;
     setJoinLoading(true);
-    setJoinResult(null);
     try {
-      await requestToJoinByCode(token, codeInput.trim());
-      setJoinResult({ msg: "Join request sent! Waiting for teacher approval.", type: "success" });
-      setPreview(null);
+      await requestToJoinByCode(token, preview.join_code);
+      setJoinSuccess(true);
+      toast.success("Enrolled successfully!");
       setCodeInput("");
+      setPreview(null);
       loadMemberships();
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : "Failed";
-      const isInfo = msg.toLowerCase().includes("already");
-      setJoinResult({ msg, type: isInfo ? "info" : "error" });
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : "Enrollment request failed";
+      toast.error(msg);
+      setPreviewError(msg);
     } finally {
       setJoinLoading(false);
     }
@@ -145,333 +277,1053 @@ export default function StudentDashboard() {
   const approvedClasses = memberships.filter(m => m.status === "approved");
   const pendingClasses = memberships.filter(m => m.status === "pending");
   const rejectedClasses = memberships.filter(m => m.status === "rejected");
-
-  // Check if already in the previewed class
-  const alreadyInClass = preview
-    ? memberships.find(m => m.class_id === preview.id)
-    : undefined;
+  const alreadyInClass = preview ? memberships.find(m => m.class_id === preview.id) : undefined;
 
   return (
-    <main className="min-h-screen bg-slate-50">
-      {/* ── Sidebar ── */}
-      <aside className="w-[260px] min-h-screen bg-white border-r border-slate-200 flex flex-col py-6 px-4 fixed top-0 left-0 bottom-0 z-10">
-        {/* Logo */}
-        <div className="flex items-center gap-2.5 px-2 mb-10">
-          <div className="w-8 h-8 relative flex items-center justify-center shrink-0">
-            <img src="/logo.png" alt="AutoTest Pro Logo" className="w-full h-full object-contain" />
-          </div>
-          <span className="text-[1.05rem] font-bold text-slate-900 tracking-tight">AutoTest Pro</span>
-        </div>
-
-        {/* User */}
-        <div className="p-3 bg-slate-50 rounded-md border border-slate-200 mb-6 flex items-center gap-3">
-          <div className="w-10 h-10 rounded-full bg-[#6c63ff]/10 border-2 border-[#6c63ff] flex items-center justify-center text-[1rem] text-[#6c63ff] font-bold shrink-0">
-            {user.name.charAt(0).toUpperCase()}
-          </div>
-          <div className="overflow-hidden">
-            <div className="text-[0.88rem] font-semibold text-slate-900 overflow-hidden text-ellipsis whitespace-nowrap">{user.name}</div>
-            <div className="text-[0.72rem] text-[#6c63ff] font-semibold uppercase tracking-widest">Student</div>
+    <div className="bg-surface font-body-md text-on-surface antialiased min-h-screen">
+      {/* ── Fixed Top Header ── */}
+      <header className="fixed top-0 left-0 right-0 h-16 bg-surface-container-lowest border-b border-outline-variant z-50 flex items-center justify-between px-6 md:px-8">
+        {/* Brand / Logo (Left) */}
+        <div className="flex items-center gap-3">
+          <img
+            src="/logo_bg_removed.png"
+            alt="AutoTest Pro Logo"
+            className="h-8 w-auto shrink-0 object-contain"
+          />
+          <div className="flex flex-col">
+            <span className="font-sans text-sm font-bold tracking-widest uppercase text-on-surface leading-tight">
+              AutoTest Pro
+            </span>
+            <span className="font-sans text-[10px] tracking-widest text-secondary font-semibold uppercase leading-tight">
+              Student Portal
+            </span>
           </div>
         </div>
 
-        {/* Nav */}
-        <nav className="flex-1">
-          {(["join", "my-classes", "profile"] as Tab[]).map(t => {
-            const active = tab === t;
-            const labels: Record<Tab, string> = { join: "Join a Class", "my-classes": "My Classes", profile: "Profile" };
-            const icons: Record<Tab, React.ReactNode> = {
-              join: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M15 3h4a2 2 0 012 2v14a2 2 0 01-2 2h-4" /><polyline points="10 17 15 12 10 7" /><line x1="15" y1="12" x2="3" y2="12" /></svg>,
-              "my-classes": <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 19.5A2.5 2.5 0 016.5 17H20" /><path d="M6.5 2H20v20H6.5A2.5 2.5 0 014 19.5v-15A2.5 2.5 0 016.5 2z" /></svg>,
-              profile: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="8" r="4" /><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7" /></svg>,
-            };
-            return (
-              <button
-                key={t}
-                id={`tab-${t}`}
-                onClick={() => setTab(t)}
-                className={`w-full flex items-center gap-2.5 py-2.5 px-3 rounded-md border-none text-[0.88rem] mb-1 transition-all duration-200 text-left cursor-pointer ${active ? "bg-[#6c63ff]/10 text-[#6c63ff] font-semibold" : "bg-transparent text-slate-500 font-normal hover:bg-slate-50 hover:text-slate-900"
+        {/* Header Right Actions */}
+        <div className="flex items-center gap-3">
+          <NotificationBell role="student" />
+          {/* Profile Avatar & Interactive Details */}
+          <div className="relative">
+            <button
+              onClick={() => setProfileMenuOpen(!profileMenuOpen)}
+              className="flex items-center gap-2.5 px-3 py-1.5 bg-surface-container-lowest border border-outline-variant hover:border-black transition-colors cursor-pointer text-left"
+              aria-label="User profile details"
+              type="button"
+            >
+              <div className="w-8 h-8 bg-black text-white flex items-center justify-center font-sans text-xs font-bold shrink-0">
+                <span>{user.name.substring(0, 2).toUpperCase()}</span>
+              </div>
+              <div className="flex flex-col min-w-0 pr-1">
+                <span className="font-sans text-xs font-bold uppercase tracking-wider text-on-surface truncate max-w-[120px]">
+                  {user.name}
+                </span>
+                <span className="font-sans text-[9px] font-bold tracking-widest text-primary uppercase leading-tight">
+                  STUDENT
+                </span>
+              </div>
+              <span className="material-symbols-outlined text-[16px] text-secondary">
+                {profileMenuOpen ? "arrow_drop_up" : "arrow_drop_down"}
+              </span>
+            </button>
+
+            {/* Floating Profile Details Card */}
+            {profileMenuOpen && (
+              <>
+                <div
+                  className="fixed inset-0 z-40"
+                  onClick={() => setProfileMenuOpen(false)}
+                />
+                <div className="absolute right-0 top-12 mt-2 w-72 bg-surface-container-lowest border-2 border-black p-5 shadow-[6px_6px_0_0_#000] z-50 animate-fade-up">
+                  <div className="flex items-center gap-3 pb-4 border-b border-outline-variant">
+                    <div className="w-10 h-10 bg-black text-white flex items-center justify-center font-sans text-sm font-bold shrink-0">
+                      {user.name.substring(0, 2).toUpperCase()}
+                    </div>
+                    <div className="flex flex-col min-w-0">
+                      <span className="font-sans text-xs font-bold text-on-surface uppercase tracking-wider truncate">
+                        {user.name}
+                      </span>
+                      <span className="font-mono text-[10px] text-secondary truncate">
+                        {user.email}
+                      </span>
+                      <span className="inline-block px-1.5 py-0.5 bg-primary text-white text-[9px] font-bold tracking-widest uppercase mt-1 self-start">
+                        STUDENT
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="py-3 flex flex-col gap-2 border-b border-outline-variant text-xs">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] uppercase font-bold text-secondary tracking-wider">Student ID</span>
+                      <span className="font-mono text-[11px] font-bold text-on-surface">#{user.id}</span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] uppercase font-bold text-secondary tracking-wider">Active Classes</span>
+                      <span className="font-sans text-xs font-bold text-on-surface">{approvedClasses.length} Enrolled</span>
+                    </div>
+                  </div>
+
+                  <div className="pt-3 flex flex-col gap-2">
+                    <button
+                      onClick={() => {
+                        setTab("profile");
+                        closeClass();
+                        setProfileMenuOpen(false);
+                      }}
+                      className="w-full py-2 px-3 text-left font-sans text-xs font-bold uppercase tracking-wider text-on-surface hover:bg-surface-container transition-colors flex items-center gap-2 cursor-pointer"
+                    >
+                      <span className="material-symbols-outlined text-[16px]">account_circle</span>
+                      <span>View Full Profile</span>
+                    </button>
+                    <button
+                      onClick={handleLogout}
+                      className="w-full py-2 px-3 text-left font-sans text-xs font-bold uppercase tracking-wider text-secondary hover:!text-primary hover:bg-surface-container transition-colors flex items-center gap-2 cursor-pointer"
+                    >
+                      <span className="material-symbols-outlined text-[16px]">logout</span>
+                      <span>Sign Out</span>
+                    </button>
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      </header>
+
+      {/* ── Fixed Left Sidebar ── */}
+      <aside className="fixed left-0 top-16 bottom-0 w-64 bg-surface-container-lowest border-r border-outline-variant z-40 flex flex-col justify-between p-4 md:p-6 overflow-y-auto">
+        <div className="flex flex-col gap-2">
+          {/* Navigation */}
+          <nav className="flex flex-col gap-1.5">
+            <button
+              onClick={() => { setTab("join"); closeClass(); }}
+              className={`w-full flex items-center justify-between px-3.5 py-3 tracking-widest text-xs uppercase transition-colors cursor-pointer text-left ${
+                tab === "join" && !selectedClass
+                  ? "bg-black text-white font-bold"
+                  : "bg-surface-container-lowest text-secondary hover:text-black hover:bg-surface-container font-semibold"
+              }`}
+            >
+              <div className="flex items-center gap-3">
+                <span
+                  className={`material-symbols-outlined text-[18px] ${
+                    tab === "join" && !selectedClass ? "text-primary" : "text-secondary"
                   }`}
-              >
-                {icons[t]}
-                {labels[t]}
-                {t === "my-classes" && approvedClasses.length > 0 && (
-                  <span className="ml-auto bg-[#6c63ff] text-white rounded-full text-[0.7rem] font-bold py-0.5 px-2">{approvedClasses.length}</span>
-                )}
-              </button>
-            );
-          })}
-        </nav>
+                >
+                  add_box
+                </span>
+                <span>Join a Class</span>
+              </div>
+            </button>
 
-        {/* Logout */}
-        <button
-          id="btn-logout"
-          onClick={handleLogout}
-          className="w-full flex items-center gap-2.5 py-2.5 px-3 rounded-md border-none bg-transparent text-slate-500 text-[0.88rem] cursor-pointer transition-all duration-200 mt-2 hover:bg-slate-50 hover:text-slate-900"
-        >
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4" /><polyline points="16 17 21 12 16 7" /><line x1="21" y1="12" x2="9" y2="12" /></svg>
-          Sign out
-        </button>
+            <button
+              onClick={() => { setTab("my-classes"); closeClass(); }}
+              className={`w-full flex items-center justify-between px-3.5 py-3 tracking-widest text-xs uppercase transition-colors cursor-pointer text-left ${
+                tab === "my-classes"
+                  ? "bg-black text-white font-bold"
+                  : "bg-surface-container-lowest text-secondary hover:text-black hover:bg-surface-container font-semibold"
+              }`}
+            >
+              <div className="flex items-center gap-3">
+                <span
+                  className={`material-symbols-outlined text-[18px] ${
+                    tab === "my-classes" ? "text-primary" : "text-secondary"
+                  }`}
+                >
+                  school
+                </span>
+                <span>My Classes</span>
+              </div>
+              {approvedClasses.length > 0 && (
+                <span className="px-2 py-0.5 bg-primary text-white text-[10px] font-bold font-sans">
+                  {approvedClasses.length}
+                </span>
+              )}
+            </button>
+
+            <button
+              onClick={() => { setTab("profile"); closeClass(); }}
+              className={`w-full flex items-center justify-between px-3.5 py-3 tracking-widest text-xs uppercase transition-colors cursor-pointer text-left ${
+                tab === "profile" && !selectedClass
+                  ? "bg-black text-white font-bold"
+                  : "bg-surface-container-lowest text-secondary hover:text-black hover:bg-surface-container font-semibold"
+              }`}
+            >
+              <div className="flex items-center gap-3">
+                <span
+                  className={`material-symbols-outlined text-[18px] ${
+                    tab === "profile" && !selectedClass ? "text-primary" : "text-secondary"
+                  }`}
+                >
+                  account_circle
+                </span>
+                <span>Profile</span>
+              </div>
+            </button>
+          </nav>
+        </div>
+
+        {/* Bottom Sign Out */}
+        <div className="mt-auto pt-6 border-t border-outline-variant">
+          <button
+            onClick={handleLogout}
+            className="w-full flex items-center gap-3 px-3.5 py-2.5 text-secondary hover:!text-primary hover:bg-surface-container transition-colors text-xs font-semibold tracking-widest uppercase cursor-pointer"
+          >
+            <span className="material-symbols-outlined text-[18px]">logout</span>
+            <span>Sign Out</span>
+          </button>
+        </div>
       </aside>
 
-      {/* ── Main Content ── */}
-      <div className="p-8 min-h-screen relative z-[1]" style={{ marginLeft: "260px" }}>
+      {/* ── Main Canvas (Offset for Top Header and Left Sidebar) ── */}
+      <div className="pl-64 pt-16">
+        <main className="w-full bg-surface min-h-[calc(100vh-4rem)] px-8 py-8">
+          <div className="flex flex-col w-full max-w-7xl mx-auto">
+            <div className="flex flex-col w-full">
 
-        {/* ── Join by Code Tab ── */}
-        {tab === "join" && (
-          <div className="animate-fade-up max-w-[520px]">
-            <div className="mb-8">
-              <h1 className="text-[1.8rem] font-bold text-slate-900 tracking-tight mb-1">Join a Class</h1>
-              <p className="text-slate-600 text-[0.9rem]">Enter the class code your teacher shared with you.</p>
-            </div>
+              {/* ───────────────────────────────────────────────────────────── */}
+              {/* TAB 1: JOIN A CLASS (Pixel-accurate Stitch screen)             */}
+              {/* ───────────────────────────────────────────────────────────── */}
+              {tab === "join" && (
+                <div className="animate-fade-up">
+                  {/* Editorial Accent Line */}
+                  <div className="w-12 h-1 bg-brand-crimson mb-6"></div>
 
-            {/* Code input form */}
-            <div className="p-8 bg-white border border-slate-200 rounded-xl mb-6 shadow-sm">
-              <form onSubmit={handlePreview}>
-                <label className="block text-[0.82rem] font-semibold text-slate-600 mb-2 uppercase tracking-widest">Class Code</label>
-                <div className="flex gap-3">
-                  <input
-                    id="input-class-code"
-                    type="text"
-                    value={codeInput}
-                    onChange={e => {
-                      setCodeInput(e.target.value.toUpperCase());
-                      setPreview(null);
-                      setPreviewError("");
-                      setJoinResult(null);
-                    }}
-                    placeholder="e.g. ABC12345"
-                    maxLength={20}
-                    className="flex-1 px-4 py-3 bg-slate-50 border border-slate-200 rounded-md text-slate-900 font-mono text-[1.05rem] font-bold tracking-[0.12em] outline-none uppercase transition-colors focus:border-[#6c63ff] focus:ring-[3px] focus:ring-[#6c63ff]/10"
-                  />
-                  <button
-                    id="btn-lookup-code"
-                    type="submit"
-                    disabled={previewLoading || !codeInput.trim()}
-                    className={`px-5 py-3 rounded-md border-none text-white text-[0.9rem] font-semibold transition-all duration-200 whitespace-nowrap ${previewLoading || !codeInput.trim() ? "bg-[#6c63ff]/50 cursor-not-allowed" : "bg-[#6c63ff] hover:bg-[#5a52d5] cursor-pointer shadow-sm"
-                      }`}
-                  >
-                    {previewLoading ? "Looking up…" : "Look up"}
-                  </button>
-                </div>
+                  {/* Header Section */}
+                  <header className="flex flex-col gap-3 mb-10">
+                    <div className="flex items-center gap-3">
+                      <span className="font-label-caps text-xs font-bold tracking-[0.2em] text-brand-crimson uppercase">
+                        Portal Enrollment
+                      </span>
+                      <span className="text-neutral-400">/</span>
+                      <span className="font-label-caps text-xs tracking-[0.15em] text-neutral-500 uppercase">
+                        Class Code
+                      </span>
+                    </div>
+                    <h1 className="font-serif text-4xl lg:text-5xl text-brand-dark tracking-tight font-normal">
+                      Join a Class
+                    </h1>
+                    <p className="font-body-md text-base text-neutral-600 max-w-2xl leading-relaxed">
+                      Enter the class code provided by your instructor to enroll, synchronize automated test suites, and access live assignments.
+                    </p>
+                  </header>
 
-                {previewError && (
-                  <div className="mt-3 px-3.5 py-2.5 bg-red-50 border border-red-200 rounded-md text-red-600 text-[0.85rem]">
-                    {previewError}
+                  {/* Two-Column Balanced Workspace */}
+                  <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+                    {/* Primary Column: Enrollment Card (7 cols) */}
+                    <section className="lg:col-span-7 flex flex-col gap-6">
+                      <div className="bg-surface-container-lowest border border-black/10 p-8 sm:p-10 flex flex-col gap-8 shadow-[4px_4px_0_0_rgba(0,0,0,0.04)]">
+                        {/* Card Header & Badge */}
+                        <div className="flex items-center justify-between border-b border-black/10 pb-5">
+                          <div className="flex items-center gap-3">
+                            <div className="w-10 h-10 bg-brand-dark flex items-center justify-center text-brand-crimson">
+                              <span className="material-symbols-outlined text-[22px]">vpn_key</span>
+                            </div>
+                            <div>
+                              <span className="font-label-caps text-[11px] text-neutral-500 uppercase tracking-[0.18em] block">
+                                Access Key
+                              </span>
+                              <span className="font-serif text-2xl text-brand-dark font-normal">
+                                Enter Class Code
+                              </span>
+                            </div>
+                          </div>
+                          <span className="px-2.5 py-1 border border-brand-crimson text-brand-crimson font-label-caps text-[10px] uppercase font-bold tracking-[0.16em]">
+                            REQUIRED
+                          </span>
+                        </div>
+
+                        {/* Code Entry Block */}
+                        <form
+                          className="flex flex-col gap-6"
+                          onSubmit={(e) => {
+                            e.preventDefault();
+                            if (preview) handleEnrollment();
+                            else triggerLookup(codeInput);
+                          }}
+                        >
+                          <div>
+                            <div className="flex items-center justify-between mb-2.5">
+                              <label
+                                className="font-label-caps text-xs uppercase tracking-[0.16em] text-brand-dark font-bold"
+                                htmlFor="classCodeInput"
+                              >
+                                CLASS CODE
+                              </label>
+                              <span className="font-label-caps text-[11px] text-neutral-500 flex items-center gap-1 uppercase tracking-wider">
+                                <span className="material-symbols-outlined text-[14px] text-brand-crimson">check</span>
+                                Case-insensitive
+                              </span>
+                            </div>
+
+                            {/* Monospace Code Input Box */}
+                            <div className="relative flex items-center">
+                              <input
+                                autoComplete="off"
+                                className="w-full bg-white text-brand-dark font-code-input text-2xl tracking-[0.25em] px-5 py-4 border-2 border-black outline-none transition-all placeholder:text-neutral-300 focus:border-brand-crimson focus:ring-0 uppercase font-medium"
+                                id="classCodeInput"
+                                maxLength={9}
+                                value={codeInput}
+                                onChange={(e) => handleCodeInput(e.target.value)}
+                                placeholder="ABCD-1234"
+                                spellCheck={false}
+                                type="text"
+                              />
+                              <button
+                                className="absolute right-3 px-3.5 py-2 bg-neutral-100 text-brand-dark border border-black/20 hover:!bg-black hover:!text-white font-label-caps text-xs tracking-wider uppercase transition-colors flex items-center gap-1.5 cursor-pointer"
+                                id="pasteBtn"
+                                onClick={pasteFromClipboard}
+                                title="Paste from clipboard"
+                                type="button"
+                              >
+                                <span className="material-symbols-outlined text-[15px]">content_paste</span>
+                                Paste
+                              </button>
+                            </div>
+
+                            <div className="flex items-center justify-between mt-3 px-1">
+                              <p className="font-label-caps text-xs text-neutral-500 flex items-center gap-1.5 tracking-wider">
+                                <span className="material-symbols-outlined text-[15px] text-brand-crimson">info</span>
+                                Format: 8-character code with hyphen (e.g. ABCD-1234)
+                              </p>
+                              <span className="font-code-input text-xs text-neutral-500 tracking-widest font-semibold" id="charCounter">
+                                {codeInput.length} / 9
+                              </span>
+                            </div>
+                          </div>
+
+                          {/* Error message */}
+                          {previewError && (
+                            <div className="border border-brand-crimson bg-neutral-50 p-3.5 text-xs font-medium text-brand-crimson font-label-caps">
+                              ⚠️ {previewError}
+                            </div>
+                          )}
+
+                          {/* Success message */}
+                          {joinSuccess && (
+                            <div className="border border-black bg-neutral-50 p-4 text-xs font-bold text-brand-dark font-label-caps flex items-center gap-2">
+                              <span className="material-symbols-outlined text-brand-crimson">check_circle</span>
+                              ENROLLMENT REQUEST RECORDED. YOUR INSTRUCTOR WILL APPROVE IT.
+                            </div>
+                          )}
+
+                          {/* Live Preview Card */}
+                          {preview && (
+                            <div className="border border-brand-crimson bg-neutral-50 p-4 transition-all" id="previewCard">
+                              <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-3.5">
+                                  <div className="w-10 h-10 bg-brand-crimson text-white flex items-center justify-center font-serif text-lg font-bold">
+                                    {preview.name.substring(0, 2).toUpperCase()}
+                                  </div>
+                                  <div>
+                                    <span className="font-serif text-lg text-brand-dark block">{preview.name}</span>
+                                    <span className="font-label-caps text-xs text-neutral-600 tracking-wider">
+                                      Prof. {preview.teacher_name} • {preview.student_count} Students
+                                    </span>
+                                  </div>
+                                </div>
+                                <span className="px-2.5 py-1 bg-brand-dark text-white font-label-caps text-[10px] uppercase font-bold tracking-[0.18em]">
+                                  FOUND
+                                </span>
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Submit Button */}
+                          {preview ? (
+                            alreadyInClass ? (
+                              <div className="w-full bg-neutral-100 text-brand-dark font-label-caps text-xs tracking-[0.2em] uppercase font-bold py-4 px-6 border border-black/20 text-center">
+                                {alreadyInClass.status === "approved" ? "✓ ALREADY ENROLLED IN CLASS" : "⏳ REQUEST PENDING APPROVAL"}
+                              </div>
+                            ) : (
+                              <button
+                                className="w-full bg-brand-crimson text-white font-label-caps text-xs tracking-[0.2em] uppercase font-bold py-4 px-6 border border-brand-crimson hover:!bg-brand-dark hover:!border-brand-dark transition-all flex items-center justify-center gap-3 group cursor-pointer"
+                                id="enrollButton"
+                                type="button"
+                                disabled={joinLoading}
+                                onClick={handleEnrollment}
+                              >
+                                <span>{joinLoading ? "ENROLLING..." : "CONFIRM & ENROLL IN CLASS"}</span>
+                                <span className="material-symbols-outlined text-[18px] transition-transform group-hover:translate-x-1">
+                                  arrow_forward
+                                </span>
+                              </button>
+                            )
+                          ) : (
+                            <button
+                              className="w-full bg-brand-dark text-white font-label-caps text-xs tracking-[0.2em] uppercase font-bold py-4 px-6 border border-brand-dark hover:!bg-brand-crimson hover:!border-brand-crimson transition-all flex items-center justify-center gap-3 group cursor-pointer"
+                              id="enrollButton"
+                              type="submit"
+                              disabled={previewLoading || codeInput.length < 7}
+                            >
+                              <span>{previewLoading ? "LOOKING UP CLASS..." : "FIND & ENROLL IN CLASS"}</span>
+                              <span className="material-symbols-outlined text-[18px] transition-transform group-hover:translate-x-1 text-brand-crimson group-hover:text-white">
+                                arrow_forward
+                              </span>
+                            </button>
+                          )}
+                        </form>
+
+                        {/* Alternative Action Divider */}
+                        <div className="relative flex items-center justify-center my-1">
+                          <div className="absolute inset-0 flex items-center">
+                            <div className="w-full h-px bg-black/10"></div>
+                          </div>
+                          <span className="relative px-4 bg-surface-container-lowest font-label-caps text-xs text-neutral-400 uppercase tracking-[0.2em] font-bold">
+                            OR
+                          </span>
+                        </div>
+
+                        {/* Join with URL Option */}
+                        <button
+                          className="w-full bg-transparent hover:!bg-neutral-100 text-brand-dark font-label-caps text-xs tracking-[0.16em] uppercase font-bold py-3.5 px-4 border border-black/20 hover:!border-black transition-colors flex items-center justify-center gap-2 cursor-pointer"
+                          onClick={() => setUrlModalOpen(true)}
+                          type="button"
+                        >
+                          <span className="material-symbols-outlined text-[18px] text-brand-crimson">link</span>
+                          <span>JOIN WITH AN INVITE URL</span>
+                        </button>
+
+                        {/* Custom Modal for Join with Invite URL */}
+                        {urlModalOpen && (
+                          <div className="fixed inset-0 bg-black/60 backdrop-blur-xs z-50 flex items-center justify-center p-4">
+                            <div className="bg-surface-container-lowest border-2 border-black p-6 sm:p-8 max-w-lg w-full shadow-[8px_8px_0_0_#000] animate-fade-up">
+                              <div className="w-10 h-1 bg-brand-crimson mb-4"></div>
+                              <div className="flex items-center justify-between mb-2">
+                                <h3 className="font-serif text-2xl sm:text-3xl font-normal text-brand-dark">Join With Invite URL</h3>
+                                <button
+                                  onClick={() => setUrlModalOpen(false)}
+                                  className="p-1 text-secondary hover:!text-black transition-colors cursor-pointer"
+                                  type="button"
+                                  aria-label="Close modal"
+                                >
+                                  <span className="material-symbols-outlined text-[20px]">close</span>
+                                </button>
+                              </div>
+                              <p className="font-label-caps text-xs tracking-wider text-secondary uppercase mb-6">
+                                Paste your course invitation link to automatically extract the enrollment code.
+                              </p>
+                              <form onSubmit={handleInviteUrlSubmit} className="flex flex-col gap-4">
+                                <div className="flex flex-col gap-1.5">
+                                  <label className="font-label-caps text-[11px] font-bold text-on-surface uppercase tracking-wider">
+                                    Invitation Link
+                                  </label>
+                                  <input
+                                    type="url"
+                                    autoFocus
+                                    value={inviteUrlInput}
+                                    onChange={(e) => setInviteUrlInput(e.target.value)}
+                                    placeholder="https://autotest.pro/join/ABC-1234"
+                                    className="w-full bg-white text-on-surface font-sans text-sm px-4 py-3 border-2 border-black outline-none placeholder:text-neutral-400 focus:border-brand-crimson transition-colors"
+                                  />
+                                </div>
+                                <div className="flex items-center justify-end gap-3 pt-2">
+                                  <button
+                                    type="button"
+                                    onClick={() => setUrlModalOpen(false)}
+                                    className="px-4 py-2.5 border border-outline-variant hover:!border-black text-xs font-bold uppercase tracking-wider text-secondary hover:!text-black transition-colors cursor-pointer"
+                                  >
+                                    Cancel
+                                  </button>
+                                  <button
+                                    type="submit"
+                                    className="px-5 py-2.5 bg-black hover:!bg-brand-crimson text-white text-xs font-bold uppercase tracking-widest transition-all cursor-pointer shadow-[3px_3px_0_0_#ff1d58]"
+                                  >
+                                    Extract &amp; Enroll
+                                  </button>
+                                </div>
+                              </form>
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Tip / Helper Callout Box */}
+                        <div className="border-l-2 border-brand-crimson bg-neutral-100/70 p-4 flex items-start gap-3.5">
+                          <span className="material-symbols-outlined text-brand-crimson text-[20px] shrink-0 mt-0.5">
+                            help_outline
+                          </span>
+                          <div className="flex flex-col gap-1">
+                            <span className="font-label-caps text-xs text-brand-dark font-bold uppercase tracking-wider">
+                              Need help finding your code?
+                            </span>
+                            <p className="font-body-md text-xs text-neutral-600 leading-relaxed">
+                              Class codes are 6 to 8 alphanumeric characters provided directly by your teacher on the syllabus or whiteboard. Codes are case-insensitive.
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                    </section>
+
+                    {/* Side / Context Column (5 cols) */}
+                    <aside className="lg:col-span-5 flex flex-col gap-6">
+                      {/* Currently Enrolled Card */}
+                      <div className="bg-surface-container-lowest border border-black/10 p-6 flex flex-col gap-5 shadow-[4px_4px_0_0_rgba(0,0,0,0.04)]">
+                        <div className="flex items-center justify-between border-b border-black/10 pb-4">
+                          <div className="flex items-center gap-2.5">
+                            <span className="material-symbols-outlined text-brand-crimson text-[20px]">school</span>
+                            <h2 className="font-label-caps text-xs uppercase tracking-[0.18em] text-brand-dark font-bold">
+                              CURRENTLY ENROLLED
+                            </h2>
+                          </div>
+                          <span className="w-5 h-5 bg-black text-white font-label-caps text-[10px] flex items-center justify-center font-bold">
+                            {approvedClasses.length}
+                          </span>
+                        </div>
+
+                        {approvedClasses.length === 0 ? (
+                          <div className="p-4 bg-surface-container-low border border-black/5 text-center text-xs font-label-caps text-neutral-500">
+                            NO ACTIVE CLASSES YET
+                          </div>
+                        ) : (
+                          approvedClasses.map(cls => (
+                            <div key={cls.id} className="bg-surface-container-low border border-black/10 p-4 flex flex-col gap-4">
+                              <div className="flex items-start justify-between gap-3">
+                                <div className="flex items-center gap-3">
+                                  <div className="w-10 h-10 bg-brand-crimson text-white flex items-center justify-center font-serif text-base font-bold">
+                                    {cls.class_name.substring(0, 2).toUpperCase()}
+                                  </div>
+                                  <div className="min-w-0">
+                                    <h3 className="font-serif text-lg text-brand-dark leading-snug truncate">
+                                      {cls.class_name}
+                                    </h3>
+                                  </div>
+                                </div>
+                                <span className="inline-flex items-center gap-1.5 px-2 py-0.5 border border-brand-dark bg-white text-brand-dark font-label-caps text-[9px] font-bold tracking-[0.15em] shrink-0 uppercase">
+                                  <span className="w-1.5 h-1.5 bg-brand-crimson"></span>ACTIVE
+                                </span>
+                              </div>
+
+                              <div className="flex items-center gap-2.5 pt-1 border-t border-black/5">
+                                <div className="w-5 h-5 bg-black text-white flex items-center justify-center font-label-caps text-[10px] font-bold">
+                                  {cls.teacher_name.charAt(0).toUpperCase()}
+                                </div>
+                                <span className="font-body-md text-xs text-brand-dark font-medium">
+                                  Prof. {cls.teacher_name}
+                                </span>
+                              </div>
+
+                              <div className="flex justify-end pt-1">
+                                <button
+                                  onClick={() => { setTab("my-classes"); openClass(cls); }}
+                                  className="inline-flex items-center gap-1 font-label-caps text-xs text-brand-dark hover:text-brand-crimson font-bold uppercase tracking-wider group cursor-pointer"
+                                >
+                                  <span>View Class Workspace</span>
+                                  <span className="material-symbols-outlined text-[16px] transition-transform group-hover:translate-x-1">
+                                    arrow_forward
+                                  </span>
+                                </button>
+                              </div>
+                            </div>
+                          ))
+                        )}
+                      </div>
+
+                      {/* FAQ Accordion Module */}
+                      <div className="bg-surface-container-lowest border border-black/10 p-6 flex flex-col gap-5 shadow-[4px_4px_0_0_rgba(0,0,0,0.04)]">
+                        <div className="flex items-center gap-2.5 border-b border-black/10 pb-4">
+                          <span className="material-symbols-outlined text-brand-crimson text-[20px]">help</span>
+                          <h2 className="font-label-caps text-xs uppercase tracking-[0.18em] text-brand-dark font-bold">
+                            FREQUENTLY ASKED QUESTIONS
+                          </h2>
+                        </div>
+                        <div className="flex flex-col gap-2.5">
+                          <details className="group bg-surface-container-low border border-black/10 open:border-black transition-colors">
+                            <summary className="flex items-center justify-between p-3.5 cursor-pointer list-none select-none font-label-caps text-xs uppercase tracking-wider text-brand-dark font-bold">
+                              <span>Can't find your class code?</span>
+                              <span className="material-symbols-outlined text-[18px] text-neutral-600 transition-transform group-open:rotate-180">
+                                expand_more
+                              </span>
+                            </summary>
+                            <div className="px-3.5 pb-3.5 font-body-md text-xs text-neutral-600 leading-relaxed border-t border-black/5 pt-2 mt-1">
+                              Check your course management system (Canvas, Google Classroom, Blackboard) or check the top of your syllabus handout. Your teacher can regenerate or confirm your code anytime.
+                            </div>
+                          </details>
+
+                          <details className="group bg-surface-container-low border border-black/10 open:border-black transition-colors">
+                            <summary className="flex items-center justify-between p-3.5 cursor-pointer list-none select-none font-label-caps text-xs uppercase tracking-wider text-brand-dark font-bold">
+                              <span>Already enrolled in a section?</span>
+                              <span className="material-symbols-outlined text-[18px] text-neutral-600 transition-transform group-open:rotate-180">
+                                expand_more
+                              </span>
+                            </summary>
+                            <div className="px-3.5 pb-3.5 font-body-md text-xs text-neutral-600 leading-relaxed border-t border-black/5 pt-2 mt-1">
+                              If you are switching class periods, entering the new code will automatically migrate your assignments and grades while alerting your instructor.
+                            </div>
+                          </details>
+
+                          <details className="group bg-surface-container-low border border-black/10 open:border-black transition-colors">
+                            <summary className="flex items-center justify-between p-3.5 cursor-pointer list-none select-none font-label-caps text-xs uppercase tracking-wider text-brand-dark font-bold">
+                              <span>Are class codes case-sensitive?</span>
+                              <span className="material-symbols-outlined text-[18px] text-neutral-600 transition-transform group-open:rotate-180">
+                                expand_more
+                              </span>
+                            </summary>
+                            <div className="px-3.5 pb-3.5 font-body-md text-xs text-neutral-600 leading-relaxed border-t border-black/5 pt-2 mt-1">
+                              No. You can type <code className="font-code-input text-brand-crimson font-bold uppercase">abc-1234</code> or <code className="font-code-input text-brand-crimson font-bold uppercase">ABC-1234</code>; our parser automatically formats and normalizes your input.
+                            </div>
+                          </details>
+                        </div>
+                      </div>
+                    </aside>
                   </div>
-                )}
-              </form>
-
-              {/* Join result message */}
-              {joinResult && (
-                <div className={`mt-4 px-4 py-3 border rounded-md text-[0.88rem] font-medium ${joinResult.type === "success" ? "bg-green-50 border-green-200 text-green-700" :
-                    joinResult.type === "info" ? "bg-indigo-50 border-indigo-200 text-indigo-700" :
-                      "bg-red-50 border-red-200 text-red-600"
-                  }`}>
-                  {joinResult.type === "success" && "✅ "}{joinResult.msg}
                 </div>
               )}
-            </div>
 
-            {/* Class Preview Card */}
-            {preview && (
-              <div className="animate-fade-up p-6 bg-white border-[1.5px] border-[#6c63ff] rounded-xl relative overflow-hidden shadow-sm">
-                <div className="absolute top-0 left-0 bottom-0 w-1 bg-gradient-to-b from-[#6c63ff] to-[#4ec078] rounded-l-md" />
-                <div className="pl-2">
-                  <div className="flex items-center gap-2 mb-1.5">
-                    <span className="text-[0.75rem] font-bold uppercase tracking-widest text-[#6c63ff]">Class Found</span>
-                  </div>
-                  <h2 className="text-[1.25rem] font-bold text-slate-900 tracking-tight mb-1">{preview.name}</h2>
-                  <p className={`text-[0.85rem] text-slate-500 ${preview.description ? "mb-2" : "mb-4"}`}>by {preview.teacher_name}</p>
-                  {preview.description && (
-                    <p className="text-slate-600 text-[0.88rem] leading-relaxed mb-4">{preview.description}</p>
-                  )}
-                  <div className="flex items-center gap-2 mb-5">
-                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-slate-400"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2" /><circle cx="9" cy="7" r="4" /></svg>
-                    <span className="text-[0.8rem] text-slate-500">{preview.student_count} student{preview.student_count !== 1 ? "s" : ""} enrolled</span>
+
+              {/* ── TAB 2: MY CLASSES ── */}
+              {tab === "my-classes" && selectedClass ? (
+                <StudentClassWorkspaceView
+                  m={selectedClass}
+                  onBack={closeClass}
+                  token={token!}
+                  initialSubTab={workspaceSubTab}
+                />
+              ) : tab === "my-classes" && (
+                <div className="animate-fade-up">
+                  {/* Page Header */}
+                  <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-6 mb-10 pb-6 border-b border-black/10">
+                    <div>
+                      <span className="text-[11px] font-bold tracking-[0.25em] uppercase text-brand-crimson mb-1 block">
+                        Course Management
+                      </span>
+                      <h1 className="font-serif text-4xl lg:text-5xl text-brand-dark tracking-tight font-normal">
+                        My Classes
+                      </h1>
+                      <p className="text-xs uppercase tracking-[0.15em] text-neutral-500 mt-2 flex items-center gap-2 font-medium flex-wrap">
+                        <span className="w-2 h-2 bg-brand-crimson inline-block shrink-0"></span>
+                        {approvedClasses.length} Active Course{approvedClasses.length !== 1 ? "s" : ""}
+                        <span className="text-black/20">|</span>
+                        {pendingClasses.length} Pending Approval
+                        <span className="text-black/20">|</span>
+                        AutoTest Bench Active
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-3 shrink-0">
+                      <button
+                        onClick={() => setTab("join")}
+                        className="px-6 py-3 bg-brand-dark hover:!bg-brand-crimson hover:!border-brand-crimson text-white text-[12px] font-bold uppercase tracking-[0.18em] transition-all flex items-center gap-2 border border-brand-dark cursor-pointer"
+                      >
+                        <span className="material-symbols-outlined text-[16px]">add</span>
+                        <span>Join New Class</span>
+                      </button>
+                    </div>
                   </div>
 
-                  {alreadyInClass ? (
-                    <div className={`py-2.5 px-4 border rounded-md text-[0.85rem] font-semibold text-center ${alreadyInClass.status === "approved" ? "bg-green-50 border-green-200 text-green-700" : "bg-amber-50 border-amber-200 text-amber-700"
-                      }`}>
-                      {alreadyInClass.status === "approved" ? "✅ You are already enrolled in this class" : "⏳ Your join request is pending approval"}
+                  {/* Stats Bento Row */}
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-5 mb-10">
+                    <div className="p-6 bg-surface-container-lowest border border-black/10 flex items-start justify-between relative hover:border-black transition-colors overflow-hidden">
+                      <div className="flex flex-col">
+                        <span className="text-[10px] font-bold tracking-[0.2em] text-neutral-500 uppercase">Active Enrollment</span>
+                        <div className="flex items-baseline gap-2 mt-2">
+                          <span className="font-serif text-3xl font-medium text-brand-dark">{String(approvedClasses.length).padStart(2, "0")}</span>
+                          <span className="text-[10px] font-bold tracking-[0.15em] text-brand-crimson uppercase">Verified</span>
+                        </div>
+                        <span className="text-[11px] tracking-wider uppercase text-neutral-500 mt-2 font-medium">
+                          {approvedClasses.length > 0 ? approvedClasses[0].class_name.substring(0, 20) : "No active courses"}
+                        </span>
+                      </div>
+                      <div className="w-10 h-10 border border-black/10 bg-surface flex items-center justify-center text-brand-dark shrink-0">
+                        <span className="material-symbols-outlined text-[20px]">school</span>
+                      </div>
+                      <div className="absolute left-0 top-0 bottom-0 w-1 bg-brand-crimson"></div>
+                    </div>
+                    <div className="p-6 bg-surface-container-lowest border border-black/10 flex items-start justify-between relative hover:border-black transition-colors overflow-hidden">
+                      <div className="flex flex-col">
+                        <span className="text-[10px] font-bold tracking-[0.2em] text-neutral-500 uppercase">Pending Approval</span>
+                        <div className="flex items-baseline gap-2 mt-2">
+                          <span className="font-serif text-3xl font-medium text-brand-dark">{String(pendingClasses.length).padStart(2, "0")}</span>
+                          <span className="text-[10px] font-bold tracking-[0.15em] text-brand-dark uppercase">
+                            {pendingClasses.length === 0 ? "All Clear" : "Pending"}
+                          </span>
+                        </div>
+                        <span className="text-[11px] tracking-wider uppercase text-neutral-500 mt-2 font-medium">Awaiting instructor review</span>
+                      </div>
+                      <div className="w-10 h-10 border border-black/10 bg-surface flex items-center justify-center text-brand-dark shrink-0">
+                        <span className="material-symbols-outlined text-[20px]">assignment_turned_in</span>
+                      </div>
+                      <div className="absolute left-0 top-0 bottom-0 w-1 bg-brand-dark"></div>
+                    </div>
+                    <div className="p-6 bg-surface-container-lowest border border-black/10 flex items-start justify-between relative hover:border-black transition-colors overflow-hidden">
+                      <div className="flex flex-col">
+                        <span className="text-[10px] font-bold tracking-[0.2em] text-neutral-500 uppercase">Total Enrolled</span>
+                        <div className="flex items-baseline gap-2 mt-2">
+                          <span className="font-serif text-3xl font-medium text-brand-crimson">{String(memberships.length).padStart(2, "0")}</span>
+                          <span className="text-[10px] font-bold tracking-[0.15em] text-brand-crimson uppercase">Sessions</span>
+                        </div>
+                        <span className="text-[11px] tracking-wider uppercase text-neutral-500 mt-2 font-medium">Academic year 2024–25</span>
+                      </div>
+                      <div className="w-10 h-10 border border-black/10 bg-surface flex items-center justify-center text-brand-crimson shrink-0">
+                        <span className="material-symbols-outlined text-[20px]">analytics</span>
+                      </div>
+                      <div className="absolute left-0 top-0 bottom-0 w-1 bg-brand-crimson"></div>
+                    </div>
+                  </div>
+
+                  {/* Search & Filter Ribbon */}
+                  <div className="p-4 bg-surface-container-lowest border border-black/10 flex flex-col md:flex-row items-center justify-between gap-4 mb-8">
+                    <div className="relative w-full md:w-96 flex items-center">
+                      <span className="material-symbols-outlined text-neutral-400 absolute left-3 pointer-events-none text-[18px]">search</span>
+                      <input
+                        className="w-full pl-9 pr-4 py-2 border border-black/10 bg-surface text-brand-dark placeholder:text-neutral-400 text-xs uppercase tracking-wider font-medium focus:bg-white focus:border-black focus:outline-none transition-all"
+                        placeholder="SEARCH CLASSES, INSTRUCTORS..."
+                        type="text"
+                        value={classSearch}
+                        onChange={(e) => setClassSearch(e.target.value)}
+                      />
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <div className="flex items-center border border-black/10 bg-surface p-0.5">
+                        <button
+                          onClick={() => setClassTab("active")}
+                          className={`px-4 py-1.5 text-[11px] font-bold uppercase tracking-[0.15em] transition-all cursor-pointer ${classTab === "active" ? "bg-brand-dark text-white" : "text-neutral-500 hover:text-brand-dark"}`}
+                        >
+                          Active ({approvedClasses.length})
+                        </button>
+                        <button
+                          onClick={() => setClassTab("pending")}
+                          className={`px-4 py-1.5 text-[11px] font-bold uppercase tracking-[0.15em] transition-all cursor-pointer ${classTab === "pending" ? "bg-brand-dark text-white" : "text-neutral-500 hover:text-brand-dark"}`}
+                        >
+                          Pending ({pendingClasses.length})
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Content */}
+                  {memLoading ? (
+                    <div className="flex flex-col gap-4">
+                      {[1, 2].map(i => (
+                        <div key={i} className="h-64 bg-surface-container-low border border-black/10 animate-pulse" />
+                      ))}
+                    </div>
+                  ) : memberships.length === 0 ? (
+                    <div className="bg-surface-container-lowest border border-black/10 p-12 text-center">
+                      <span className="material-symbols-outlined text-[48px] text-neutral-400 mb-4 block">school</span>
+                      <h2 className="font-serif text-2xl text-brand-dark mb-2">No Enrolled Classes</h2>
+                      <p className="font-body-md text-sm text-neutral-600 mb-6">You have not enrolled in any classes yet.</p>
+                      <button onClick={() => setTab("join")} className="bg-brand-dark text-white text-xs tracking-[0.2em] uppercase font-bold py-3.5 px-6 hover:bg-brand-crimson transition-all cursor-pointer">
+                        Join a Class →
+                      </button>
                     </div>
                   ) : (
-                    <button
-                      id="btn-confirm-join"
-                      onClick={handleJoin}
-                      disabled={joinLoading}
-                      className={`w-full py-3 rounded-md border-none text-white text-[0.95rem] font-semibold transition-all duration-200 ${joinLoading ? "bg-[#6c63ff]/60 cursor-not-allowed" : "bg-[#6c63ff] hover:bg-[#5a52d5] cursor-pointer shadow-sm"
-                        }`}
-                    >
-                      {joinLoading ? "Sending request…" : "Request to Join"}
-                    </button>
+                    <>
+                      {classTab === "active" && (
+                        <div className="flex flex-col gap-4">
+                          {/* Section header */}
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-3">
+                              <span className="text-[11px] font-bold tracking-[0.25em] text-brand-dark uppercase">
+                                Enrolled Courses ({approvedClasses.length})
+                              </span>
+                              <span className="px-2 py-0.5 bg-brand-crimson text-white text-[9px] font-bold tracking-[0.15em] uppercase">Active Term</span>
+                            </div>
+                            <div className="flex items-center gap-1.5 text-neutral-500 text-[11px] font-medium uppercase tracking-wider">
+                              <span className="material-symbols-outlined text-[15px]">sync</span>
+                              <span>Live</span>
+                            </div>
+                          </div>
+
+                          {/* Class cards */}
+                          {approvedClasses
+                            .filter(cls =>
+                              !classSearch ||
+                              cls.class_name.toLowerCase().includes(classSearch.toLowerCase()) ||
+                              cls.teacher_name.toLowerCase().includes(classSearch.toLowerCase())
+                            )
+                            .map(cls => {
+                              const stats = classStats[cls.class_id] || { examsCount: 0, syllabusCount: 0 };
+                              return (
+                                <div
+                                  key={cls.id}
+                                  className="w-full bg-surface-container-lowest border border-outline-variant hover:border-black transition-all duration-200 p-6 sm:p-7 shadow-[2px_2px_0_0_rgba(0,0,0,0.02)] group flex flex-col gap-5"
+                                >
+                                  {/* Top Header Row: Course Code, Title & Instructor */}
+                                  <div className="flex flex-col md:flex-row md:items-start justify-between gap-4">
+                                    <div className="flex flex-col gap-2">
+                                      <div className="flex items-center gap-3">
+                                        <span className="px-2.5 py-1 bg-black text-white font-mono text-[11px] font-bold tracking-[0.15em] uppercase">
+                                          {cls.class_name.replace(/\s+/g, "-").substring(0, 8).toUpperCase()}
+                                        </span>
+                                        <span className="text-xs uppercase tracking-wider font-semibold text-secondary flex items-center gap-1.5">
+                                          <span className="w-5 h-5 bg-black text-white text-[10px] font-bold flex items-center justify-center shrink-0">
+                                            {cls.teacher_name.charAt(0).toUpperCase()}
+                                          </span>
+                                          Prof. {cls.teacher_name}
+                                        </span>
+                                      </div>
+                                      <h2 className="font-serif text-2xl lg:text-3xl text-brand-dark group-hover:text-primary transition-colors font-medium">
+                                        {cls.class_name}
+                                      </h2>
+                                      {cls.class_description && (
+                                        <p className="text-sm text-neutral-600 font-body-md leading-relaxed mt-1 max-w-3xl">
+                                          {cls.class_description}
+                                        </p>
+                                      )}
+                                    </div>
+
+                                    {/* Linear Counts Metrics Display */}
+                                    <div className="flex items-center gap-3 shrink-0 self-start">
+                                      <div className="px-3.5 py-2 bg-surface border border-outline-variant flex items-center gap-2.5">
+                                        <span className="material-symbols-outlined text-[18px] text-primary">menu_book</span>
+                                        <div className="flex flex-col">
+                                          <span className="text-[10px] font-bold uppercase tracking-wider text-secondary leading-none">
+                                            Syllabus
+                                          </span>
+                                          <span className="font-serif text-sm font-bold text-on-surface leading-tight mt-0.5">
+                                            {stats.syllabusCount} Uploaded
+                                          </span>
+                                        </div>
+                                      </div>
+
+                                      <div className="px-3.5 py-2 bg-surface border border-outline-variant flex items-center gap-2.5">
+                                        <span className="material-symbols-outlined text-[18px] text-primary">quiz</span>
+                                        <div className="flex flex-col">
+                                          <span className="text-[10px] font-bold uppercase tracking-wider text-secondary leading-none">
+                                            Assessments
+                                          </span>
+                                          <span className="font-serif text-sm font-bold text-on-surface leading-tight mt-0.5">
+                                            {stats.examsCount} Exam{stats.examsCount !== 1 ? "s" : ""}
+                                          </span>
+                                        </div>
+                                      </div>
+                                    </div>
+                                  </div>
+
+                                  {/* Action Ribbon */}
+                                  <div className="pt-4 border-t border-outline-variant flex flex-wrap items-center justify-between gap-4">
+                                    <div className="flex items-center gap-3">
+                                      <button
+                                        onClick={() => openClass(cls, "syllabus")}
+                                        className="px-4 py-2.5 border border-outline-variant bg-surface-container-lowest hover:!border-black hover:!bg-black hover:!text-white text-on-surface text-xs font-bold tracking-[0.15em] uppercase transition-all flex items-center gap-2 cursor-pointer"
+                                      >
+                                        <span className="material-symbols-outlined text-[16px]">menu_book</span>
+                                        <span>View Syllabus</span>
+                                      </button>
+                                      <button
+                                        onClick={() => openClass(cls, "exams")}
+                                        className="px-4 py-2.5 border border-outline-variant bg-surface-container-lowest hover:!border-black hover:!bg-black hover:!text-white text-on-surface text-xs font-bold tracking-[0.15em] uppercase transition-all flex items-center gap-2 cursor-pointer"
+                                      >
+                                        <span className="material-symbols-outlined text-[16px]">quiz</span>
+                                        <span>View Exams</span>
+                                      </button>
+                                    </div>
+
+                                    <button
+                                      onClick={() => openClass(cls, "exams")}
+                                      className="px-6 py-2.5 bg-black hover:!bg-brand-crimson text-white transition-all flex items-center gap-2 text-xs font-bold uppercase tracking-[0.2em] cursor-pointer shadow-[2px_2px_0_0_#000]"
+                                    >
+                                      <span>Enter Class</span>
+                                      <span className="material-symbols-outlined text-[16px]">arrow_forward</span>
+                                    </button>
+                                  </div>
+                                </div>
+                              );
+                            })}
+
+                          {/* Empty active state */}
+                          {approvedClasses.filter(cls =>
+                            !classSearch ||
+                            cls.class_name.toLowerCase().includes(classSearch.toLowerCase()) ||
+                            cls.teacher_name.toLowerCase().includes(classSearch.toLowerCase())
+                          ).length === 0 && (
+                            <div className="p-12 border border-dashed border-black/15 bg-surface flex flex-col items-center justify-center text-center">
+                              <div className="w-10 h-10 border border-black/10 bg-white flex items-center justify-center text-neutral-400 mb-3">
+                                <span className="material-symbols-outlined text-[20px]">inbox</span>
+                              </div>
+                              <span className="text-xs font-bold uppercase tracking-[0.15em] text-brand-dark">
+                                {classSearch ? "No matching classes found" : "No active classes yet"}
+                              </span>
+                              <p className="text-[11px] text-neutral-500 mt-1 max-w-sm tracking-wide">
+                                {classSearch ? "Try a different search term." : "Join a class using an enrollment code from your instructor."}
+                              </p>
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {classTab === "pending" && (
+                        <div className="flex flex-col gap-4">
+                          <div className="flex items-center gap-3 mb-2">
+                            <span className="text-[11px] font-bold tracking-[0.25em] text-neutral-600 uppercase">
+                              Pending Review ({pendingClasses.length})
+                            </span>
+                          </div>
+                          {pendingClasses.length === 0 ? (
+                            <div className="p-12 border border-dashed border-black/15 bg-surface flex flex-col items-center justify-center text-center">
+                              <div className="w-10 h-10 border border-black/10 bg-white flex items-center justify-center text-neutral-400 mb-3">
+                                <span className="material-symbols-outlined text-[20px]">inbox</span>
+                              </div>
+                              <span className="text-xs font-bold uppercase tracking-[0.15em] text-brand-dark">No pending class requests</span>
+                              <p className="text-[11px] text-neutral-500 mt-1 max-w-sm tracking-wide">Have a new course enrollment token? Enter it in the enrollment panel to get started.</p>
+                            </div>
+                          ) : (
+                            pendingClasses.map(cls => (
+                              <div key={cls.id} className="bg-surface-container-lowest border border-black/10 p-6 flex items-center justify-between gap-4">
+                                <div>
+                                  <h3 className="font-serif text-xl text-brand-dark">{cls.class_name}</h3>
+                                  <span className="text-xs text-neutral-500 uppercase tracking-wider">Prof. {cls.teacher_name}</span>
+                                </div>
+                                <span className="px-2 py-0.5 bg-neutral-200 text-neutral-700 text-[9px] font-bold tracking-[0.15em] uppercase shrink-0">PENDING</span>
+                              </div>
+                            ))
+                          )}
+                        </div>
+                      )}
+                    </>
                   )}
                 </div>
-              </div>
-            )}
+              )}
+              {/* ── TAB 3: STUDENT PROFILE ── */}
+              {tab === "profile" && (
+                <div className="animate-fade-up max-w-[840px]">
+                  {/* Editorial Accent Line */}
+                  <div className="w-12 h-1 bg-brand-crimson mb-6"></div>
 
-            {/* Helper hint */}
-            {!preview && !joinResult && (
-              <div className="flex gap-3 p-4 bg-indigo-50 border border-indigo-100 rounded-md">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0 mt-0.5 text-[#4ec078]"><circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" /></svg>
-                <p className="text-[0.85rem] text-slate-600 leading-relaxed">
-                  Ask your teacher for the class code or use the invite link they shared. Codes are case-insensitive.
-                </p>
-              </div>
-            )}
-          </div>
-        )}
+                  {/* Header Section */}
+                  <header className="flex flex-col gap-3 mb-10">
+                    <h1 className="font-serif text-4xl lg:text-5xl text-brand-dark tracking-tight font-normal">
+                      Student Profile
+                    </h1>
+                    <p className="font-body-md text-base text-neutral-600 max-w-2xl leading-relaxed">
+                      View your verified student credentials, enrolled class summaries, and assessment access permissions.
+                    </p>
+                  </header>
 
-        {/* ── My Classes Tab ── */}
-        {tab === "my-classes" && selectedClass ? (
-          <StudentClassDetailView m={selectedClass} onBack={closeClass} token={token!} />
-        ) : tab === "my-classes" && (
-          <div className="animate-fade-up">
-            <div className="mb-8">
-              <h1 className="text-[1.8rem] font-bold text-slate-900 tracking-tight mb-1">My Classes</h1>
-              <p className="text-slate-600 text-[0.9rem]">{approvedClasses.length} active · {pendingClasses.length} pending</p>
+                  <div className="bg-surface-container-lowest border border-black/10 p-8 sm:p-10 shadow-[4px_4px_0_0_rgba(0,0,0,0.04)] flex flex-col gap-8">
+                    {/* Identity Header */}
+                    <div className="flex flex-col sm:flex-row sm:items-center gap-6 border-b border-black/10 pb-8">
+                      <div className="w-20 h-20 bg-brand-dark text-white font-serif text-3xl font-bold flex items-center justify-center shrink-0">
+                        {user.name.charAt(0).toUpperCase()}
+                      </div>
+                      <div className="flex flex-col">
+                        <span className="font-serif text-3xl text-brand-dark">{user.name}</span>
+                        <span className="font-code-input text-sm text-neutral-600 mt-1">{user.email}</span>
+                        <span className="inline-flex items-center self-start px-2 py-0.5 bg-black text-white font-label-caps text-[9px] font-bold tracking-[0.18em] uppercase mt-2">
+                          STUDENT PORTAL
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Detailed Information Grid */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div className="p-4 bg-surface-container-low border border-black/10">
+                        <span className="font-label-caps text-[10px] text-neutral-500 uppercase tracking-widest block mb-1">
+                          STUDENT FULL NAME
+                        </span>
+                        <span className="font-serif text-lg text-brand-dark font-medium">{user.name}</span>
+                      </div>
+
+                      <div className="p-4 bg-surface-container-low border border-black/10">
+                        <span className="font-label-caps text-[10px] text-neutral-500 uppercase tracking-widest block mb-1">
+                          REGISTERED EMAIL
+                        </span>
+                        <span className="font-code-input text-xs text-brand-dark font-medium">{user.email}</span>
+                      </div>
+
+                      <div className="p-4 bg-surface-container-low border border-black/10">
+                        <span className="font-label-caps text-[10px] text-neutral-500 uppercase tracking-widest block mb-1">
+                          PORTAL ROLE
+                        </span>
+                        <span className="font-label-caps text-xs text-brand-dark font-bold">STUDENT (AUTHENTICATED)</span>
+                      </div>
+
+                      <div className="p-4 bg-surface-container-low border border-black/10">
+                        <span className="font-label-caps text-[10px] text-neutral-500 uppercase tracking-widest block mb-1">
+                          ACCOUNT STATUS
+                        </span>
+                        <span className="font-label-caps text-xs text-brand-crimson font-bold">ACTIVE &bull; VERIFIED</span>
+                      </div>
+                    </div>
+
+                    {/* Academic Stat Grid */}
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-2">
+                      <div className="p-5 bg-surface-container-low border border-black/10 text-center">
+                        <span className="font-label-caps text-[10px] text-neutral-500 uppercase tracking-widest block mb-1">
+                          ENROLLED CLASSES
+                        </span>
+                        <span className="font-serif text-3xl text-brand-dark font-bold">
+                          {approvedClasses.length}
+                        </span>
+                      </div>
+
+                      <div className="p-5 bg-surface-container-low border border-black/10 text-center">
+                        <span className="font-label-caps text-[10px] text-neutral-500 uppercase tracking-widest block mb-1">
+                          PENDING REVIEWS
+                        </span>
+                        <span className="font-serif text-3xl text-brand-crimson font-bold">
+                          {pendingClasses.length}
+                        </span>
+                      </div>
+
+                      <div className="p-5 bg-surface-container-low border border-black/10 text-center">
+                        <span className="font-label-caps text-[10px] text-neutral-500 uppercase tracking-widest block mb-1">
+                          SYSTEM INTEGRITY
+                        </span>
+                        <span className="font-label-caps text-sm text-brand-dark font-bold tracking-wider mt-2 block">
+                          VERIFIED
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Password Management */}
+                    <div className="border-t border-black/10 pt-6">
+                      <UpdatePasswordCard userEmail={user.email} />
+                    </div>
+
+                    {/* Sign Out Action */}
+                    <div className="border-t border-black/10 pt-6 flex justify-end">
+                      <button
+                        onClick={handleLogout}
+                        className="px-6 py-3.5 bg-brand-dark hover:!bg-brand-crimson hover:!border-brand-crimson text-white font-label-caps text-xs tracking-[0.2em] uppercase font-bold transition-all cursor-pointer"
+                      >
+                        Sign Out of Portal
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
             </div>
-
-            {memLoading ? (
-              <div className="grid grid-cols-[repeat(auto-fill,minmax(300px,1fr))] gap-5">
-                {[1, 2, 3].map(i => <div key={i} className="h-[160px] bg-white rounded-xl border border-slate-200 animate-pulse shadow-sm" />)}
-              </div>
-            ) : memberships.length === 0 ? (
-              <div className="text-center py-20 px-8 bg-white rounded-xl border border-dashed border-slate-300">
-                <div className="text-5xl mb-4">📖</div>
-                <h2 className="text-[1.3rem] font-bold text-slate-900 tracking-tight mb-2">No classes yet</h2>
-                <p className="text-slate-600 text-[0.9rem] mb-6">Enter a class code from your teacher to get started.</p>
-                <button onClick={() => setTab("join")} className="px-6 py-2.5 rounded-md bg-[#6c63ff] text-white text-[0.9rem] font-semibold hover:bg-[#5a52d5] transition-colors cursor-pointer shadow-sm">Join a class</button>
-              </div>
-            ) : (
-              <div>
-                {approvedClasses.length > 0 && (
-                  <>
-                    <SectionLabel label="Enrolled" color="text-green-600" bg="bg-green-600" />
-                    <div className="grid grid-cols-[repeat(auto-fill,minmax(300px,1fr))] gap-5 mb-8">
-                      {approvedClasses.map((m, i) => <MembershipCard key={m.id} m={m} delay={i * 0.07} onSelect={() => openClass(m)} />)}
-                    </div>
-                  </>
-                )}
-                {pendingClasses.length > 0 && (
-                  <>
-                    <SectionLabel label="Awaiting Approval" color="text-amber-600" bg="bg-amber-600" />
-                    <div className="grid grid-cols-[repeat(auto-fill,minmax(300px,1fr))] gap-5 mb-8">
-                      {pendingClasses.map((m, i) => <MembershipCard key={m.id} m={m} delay={i * 0.07} />)}
-                    </div>
-                  </>
-                )}
-                {rejectedClasses.length > 0 && (
-                  <>
-                    <SectionLabel label="Declined" color="text-red-600" bg="bg-red-600" />
-                    <div className="grid grid-cols-[repeat(auto-fill,minmax(300px,1fr))] gap-5">
-                      {rejectedClasses.map((m, i) => <MembershipCard key={m.id} m={m} delay={i * 0.07} />)}
-                    </div>
-                  </>
-                )}
-              </div>
-            )}
           </div>
-        )}
-
-        {/* ── Profile Tab ── */}
-        {tab === "profile" && (
-          <div className="animate-fade-up max-w-[500px]">
-            <h1 className="text-[1.8rem] font-bold text-slate-900 tracking-tight mb-8">Profile</h1>
-            <div className="p-8 bg-white border border-slate-200 rounded-xl shadow-sm">
-              <div className="w-[72px] h-[72px] rounded-full bg-[#6c63ff]/10 border-2 border-[#6c63ff] flex items-center justify-center text-[1.75rem] text-[#6c63ff] font-bold mb-5 font-[family-name:var(--font-geist-sans)]">
-                {user.name.charAt(0).toUpperCase()}
-              </div>
-              <h2 className="text-[1.3rem] font-bold text-slate-900 tracking-tight mb-1">{user.name}</h2>
-              <p className="text-slate-500 mb-3">{user.email}</p>
-              <span className="inline-block text-[0.75rem] bg-[#6c63ff]/10 text-[#6c63ff] border border-[#6c63ff]/30 rounded-full py-1 px-3 font-semibold uppercase tracking-widest">Student</span>
-              <div className="mt-6 p-4 bg-slate-50 border border-slate-200 rounded-md grid grid-cols-3 gap-4">
-                <StatBlock label="Enrolled" value={approvedClasses.length} color="text-green-600" />
-                <StatBlock label="Pending" value={pendingClasses.length} color="text-amber-600" />
-                <StatBlock label="Declined" value={rejectedClasses.length} color="text-red-600" />
-              </div>
-            </div>
-          </div>
-        )}
-      </div>
-    </main>
-  );
-}
-
-// ── Sub-components ─────────────────────────────────────────────────────────────
-
-function SectionLabel({ label, color, bg }: { label: string; color: string; bg: string }) {
-  return (
-    <div className="flex items-center gap-2 mb-4">
-      <div className={`w-1 h-[18px] rounded-full ${bg}`} />
-      <span className={`text-[0.82rem] font-bold uppercase tracking-widest ${color}`}>{label}</span>
-    </div>
-  );
-}
-
-function MembershipCard({ m, delay, onSelect }: { m: Membership; delay: number; onSelect?: () => void }) {
-  const isApproved = m.status === "approved";
-  const isPending = m.status === "pending";
-  const statusColors = {
-    bg: isApproved ? "bg-green-600" : isPending ? "bg-amber-500" : "bg-red-500",
-    badgeBg: isApproved ? "bg-green-50" : isPending ? "bg-amber-50" : "bg-red-50",
-    badgeText: isApproved ? "text-green-700" : isPending ? "text-amber-700" : "text-red-700",
-    badgeBorder: isApproved ? "border-green-200" : isPending ? "border-amber-200" : "border-red-200",
-  };
-  const statusLabel = isApproved ? "Enrolled" : isPending ? "Pending Approval" : "Declined";
-
-  return (
-    <div
-      onClick={isApproved && onSelect ? onSelect : undefined}
-      className={`animate-fade-up bg-white border border-slate-200 rounded-xl p-6 relative overflow-hidden shadow-sm transition-all duration-200 ${isApproved && onSelect ? "hover:shadow-md hover:border-green-300 cursor-pointer" : "hover:shadow-md"
-        }`}
-      style={{ animationDelay: `${delay}s` }}
-    >
-      <div className={`absolute top-0 left-0 bottom-0 w-1 ${statusColors.bg} rounded-l-md`} />
-      <div className="pl-2">
-        <h3 className="text-[1.05rem] font-bold text-slate-900 tracking-tight mb-1">{m.class_name}</h3>
-        <p className="text-[0.8rem] text-slate-500 mb-3">by {m.teacher_name}</p>
-        {m.class_description && (
-          <p className="text-slate-600 text-[0.84rem] mb-3 leading-relaxed line-clamp-2">{m.class_description}</p>
-        )}
-        <span className={`text-[0.75rem] py-0.5 px-2.5 rounded-full font-semibold border ${statusColors.badgeBg} ${statusColors.badgeText} ${statusColors.badgeBorder}`}>
-          {statusLabel}
-        </span>
+        </main>
       </div>
     </div>
   );
 }
 
-function StatBlock({ label, value, color }: { label: string; value: number; color: string }) {
-  return (
-    <div className="text-center">
-      <div className={`text-[1.8rem] font-bold tracking-tight ${color}`}>{value}</div>
-      <div className="text-[0.75rem] text-slate-500 mt-0.5 uppercase tracking-wider">{label}</div>
-    </div>
-  );
-}
+// ── Course Details Workspace: Syllabus (9fd77788) & Exams (e5d38fbc) ───────────
 
-function StudentClassDetailView({ m, onBack, token }: { m: Membership; onBack: () => void; token: string }) {
-  const [activeTab, setActiveTab] = useState<"syllabus" | "exams">("syllabus");
+function StudentClassWorkspaceView({
+  m,
+  onBack,
+  token,
+  initialSubTab = "exams",
+}: {
+  m: Membership;
+  onBack: () => void;
+  token: string;
+  initialSubTab?: "syllabus" | "exams";
+}) {
+  const [subTab, setSubTab] = useState<"syllabus" | "exams">(initialSubTab);
   const [syllabusList, setSyllabusList] = useState<SyllabusItem[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [syllabusLoading, setSyllabusLoading] = useState(true);
 
   const [examList, setExamList] = useState<StudentExam[]>([]);
   const [examsLoading, setExamsLoading] = useState(true);
+  const [syncing, setSyncing] = useState(false);
 
   const loadSyllabus = useCallback(() => {
-    setLoading(true);
+    setSyllabusLoading(true);
     fetchSyllabusList(m.class_id)
       .then(setSyllabusList)
-      .catch(() => { })
-      .finally(() => setLoading(false));
+      .catch(() => {})
+      .finally(() => setSyllabusLoading(false));
   }, [m.class_id]);
 
   const loadExams = useCallback(() => {
     setExamsLoading(true);
     getAllStudentExams(token)
-      .then((data) => setExamList(data.filter(e => e.class_id === m.class_id)))
-      .catch(() => { })
+      .then((data) => setExamList(data.filter((e) => e.class_id === m.class_id)))
+      .catch(() => {})
       .finally(() => setExamsLoading(false));
   }, [token, m.class_id]);
 
@@ -480,224 +1332,600 @@ function StudentClassDetailView({ m, onBack, token }: { m: Membership; onBack: (
     loadExams();
   }, [loadSyllabus, loadExams]);
 
-  return (
-    <div className="animate-fade-in">
-      <button onClick={onBack} className="mb-6 flex items-center gap-2 text-slate-500 hover:text-slate-900 transition-colors font-medium">
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline></svg>
-        Back to Dashboard
-      </button>
+  const handleSync = async () => {
+    setSyncing(true);
+    try {
+      await Promise.all([
+        fetchSyllabusList(m.class_id).then(setSyllabusList),
+        getAllStudentExams(token).then((data) => setExamList(data.filter((e) => e.class_id === m.class_id))),
+      ]);
+      toast.success("Workspace synchronized successfully");
+    } catch {
+      toast.error("Failed to sync workspace");
+    } finally {
+      setTimeout(() => setSyncing(false), 500);
+    }
+  };
 
-      <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-8 mb-8 relative overflow-hidden">
-        <div className="absolute top-0 left-0 right-0 h-2 bg-gradient-to-r from-green-500 to-green-400" />
-        <div className="flex items-start justify-between">
-          <div>
-            <h1 className="text-[2rem] font-bold text-slate-900 tracking-tight leading-tight mb-2">
-              {m.class_name}
-            </h1>
-            <p className="text-slate-500 text-[1.1rem]">by {m.teacher_name}</p>
+  const formatScheduleWindow = (startStr?: string, endStr?: string) => {
+    if (!startStr && !endStr) return "Open Window (No Restrictions)";
+    const opts: Intl.DateTimeFormatOptions = {
+      day: "numeric",
+      month: "short",
+      year: "numeric",
+      hour: "numeric",
+      minute: "2-digit",
+      hour12: true,
+    };
+    if (startStr && endStr) {
+      return `${new Date(startStr).toLocaleString("en-US", opts)} — ${new Date(endStr).toLocaleString("en-US", opts)}`;
+    }
+    if (startStr) return `Opens ${new Date(startStr).toLocaleString("en-US", opts)}`;
+    if (endStr) return `Ends ${new Date(endStr).toLocaleString("en-US", opts)}`;
+    return "Open Window";
+  };
+
+  const formatSubmissionDate = (completedStr?: string | null, startedStr?: string | null) => {
+    if (!completedStr) return "";
+    const opts: Intl.DateTimeFormatOptions = {
+      day: "numeric",
+      month: "short",
+      year: "numeric",
+      hour: "numeric",
+      minute: "2-digit",
+      hour12: true,
+    };
+    const compDate = new Date(completedStr);
+    let diffText = "";
+    if (startedStr) {
+      const diffMs = compDate.getTime() - new Date(startedStr).getTime();
+      const mins = Math.max(1, Math.round(diffMs / 60000));
+      diffText = ` (Took ${mins} min${mins !== 1 ? "s" : ""})`;
+    }
+    return `${compDate.toLocaleString("en-US", opts)}${diffText}`;
+  };
+
+  const completedExams = examList.filter(
+    (e) => e.attempt && (e.attempt.status === "submitted" || e.attempt.status === "evaluated")
+  );
+  const completionRate = examList.length > 0 ? Math.round((completedExams.length / examList.length) * 100) : 0;
+
+  return (
+    <div className="animate-fade-up">
+      {/* Back Breadcrumb Anchor */}
+      <div className="flex items-center justify-between pb-6">
+        <button
+          onClick={onBack}
+          type="button"
+          className="group inline-flex items-center gap-2 text-secondary hover:!text-primary transition-colors uppercase font-sans text-xs font-bold tracking-widest cursor-pointer"
+        >
+          <span className="material-symbols-outlined text-[18px] transition-transform group-hover:-translate-x-1">
+            arrow_back
+          </span>
+          <span>Back to My Classes</span>
+        </button>
+      </div>
+
+      {/* Course Masthead & Header Profile */}
+      <section
+        className="relative bg-surface-container-lowest border-2 border-black p-8 mb-6"
+        style={{ boxShadow: "6px 6px 0px #000000" }}
+      >
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
+          <div className="flex items-start md:items-center gap-5">
+            <div className="flex flex-col">
+              <h1 className="font-serif text-3xl md:text-4xl text-on-surface font-semibold tracking-tight">
+                {m.class_name}
+              </h1>
+              <div className="flex items-center gap-2 mt-1.5 text-xs text-secondary font-sans tracking-wide">
+                <span className="material-symbols-outlined text-[15px] text-primary">person</span>
+                <span className="font-semibold uppercase text-on-surface">
+                  PROF. {m.teacher_name.toUpperCase()}
+                </span>
+                <span className="text-outline-variant">•</span>
+                <span className="font-bold text-[10px] uppercase tracking-wider bg-surface-container-low px-2 py-0.5 text-secondary border border-outline-variant">
+                  ENROLLED
+                </span>
+              </div>
+            </div>
           </div>
+          <div className="flex items-center gap-4 shrink-0 border-t md:border-t-0 md:border-l border-outline-variant pt-4 md:pt-0 md:pl-6">
+            <div className="flex flex-col items-start md:items-end">
+              <span className="font-sans text-[10px] uppercase tracking-widest text-secondary font-bold">
+                Class Cohort
+              </span>
+              <span className="font-serif text-2xl font-bold text-on-surface">Active Student</span>
+            </div>
+            <button
+              onClick={handleSync}
+              type="button"
+              className="inline-flex items-center gap-2 px-4 py-2.5 border border-black bg-surface-container-lowest hover:!bg-black hover:!text-white transition-colors text-xs font-bold tracking-widest uppercase font-sans cursor-pointer"
+              style={{ boxShadow: "3px 3px 0px #000" }}
+            >
+              <span className={`material-symbols-outlined text-[15px] ${syncing ? "animate-spin" : ""}`}>
+                sync
+              </span>
+              <span>SYNC STATUS</span>
+            </button>
+          </div>
+        </div>
+      </section>
+
+      {/* Interactive Tabs Bar & Actions */}
+      <div className="flex items-center justify-between mb-8 border-b border-outline-variant pb-3">
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setSubTab("syllabus")}
+            type="button"
+            className={`px-5 py-2 font-sans text-xs uppercase tracking-widest font-bold transition-colors cursor-pointer flex items-center gap-2 ${
+              subTab === "syllabus" ? "bg-black text-white" : "text-secondary hover:text-black"
+            }`}
+          >
+            <span>Syllabus</span>
+            {syllabusList.length > 0 && (
+              <span
+                className={`px-1.5 py-0.2 text-[10px] font-bold ${
+                  subTab === "syllabus" ? "bg-primary text-white" : "bg-surface-container text-secondary"
+                }`}
+              >
+                {syllabusList.length}
+              </span>
+            )}
+          </button>
+          <button
+            onClick={() => setSubTab("exams")}
+            type="button"
+            className={`px-5 py-2 font-sans text-xs uppercase tracking-widest font-bold flex items-center gap-2.5 transition-colors cursor-pointer ${
+              subTab === "exams" ? "bg-black text-white" : "text-secondary hover:text-black"
+            }`}
+          >
+            <span className="material-symbols-outlined text-[16px] text-primary">assignment_turned_in</span>
+            <span>Exams</span>
+            <span
+              className={`px-1.5 py-0.2 text-[10px] font-bold ${
+                subTab === "exams" ? "bg-primary text-white" : "bg-surface-container text-secondary"
+              }`}
+            >
+              {examList.length}
+            </span>
+          </button>
+        </div>
+        <div className="flex items-center gap-3">
+          <button
+            onClick={subTab === "exams" ? loadExams : loadSyllabus}
+            type="button"
+            className="text-xs uppercase tracking-widest font-sans font-semibold text-secondary hover:text-on-surface transition-colors flex items-center gap-1 cursor-pointer"
+          >
+            <span className="material-symbols-outlined text-[16px]">refresh</span>
+            <span>Refresh</span>
+          </button>
         </div>
       </div>
 
-      <div className="mb-6 flex items-center gap-6 border-b border-slate-200">
-        <button
-          onClick={() => setActiveTab("syllabus")}
-          className={`py-3 px-1 font-bold text-[0.95rem] border-b-2 transition-colors ${activeTab === "syllabus" ? "border-green-500 text-green-700" : "border-transparent text-slate-500 hover:text-slate-700"
-            }`}
-        >
-          Syllabus
-        </button>
-        <button
-          onClick={() => setActiveTab("exams")}
-          className={`py-3 px-1 font-bold text-[0.95rem] border-b-2 transition-colors ${activeTab === "exams" ? "border-blue-500 text-blue-700" : "border-transparent text-slate-500 hover:text-slate-700"
-            }`}
-        >
-          Exams
-        </button>
-      </div>
+      {/* Primary Workspace Content: Split View */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+        {/* Left Column: Exams Timeline & Cards (8 cols) */}
+        <div className="lg:col-span-8 flex flex-col gap-6">
+          {subTab === "exams" && (
+            <>
+              {examsLoading ? (
+                <div className="bg-surface-container-lowest border border-outline-variant p-12 text-center font-sans text-xs font-bold tracking-widest uppercase text-secondary">
+                  LOADING COURSE EXAMINATIONS...
+                </div>
+              ) : examList.length === 0 ? (
+                <div className="bg-surface-container-lowest border border-outline-variant p-12 text-center">
+                  <span className="material-symbols-outlined text-[48px] text-secondary mb-3 block">quiz</span>
+                  <h3 className="font-serif text-2xl text-on-surface mb-1">No Active Exams</h3>
+                  <p className="font-sans text-sm text-secondary">
+                    There are no scheduled examinations currently assigned for this class.
+                  </p>
+                </div>
+              ) : (
+                examList.map((exam) => {
+                  const isSubmitted =
+                    exam.attempt && (exam.attempt.status === "submitted" || exam.attempt.status === "evaluated");
+                  const isInProgress = exam.attempt && exam.attempt.status === "in_progress";
 
-      {activeTab === "syllabus" && (
-        <div className="mb-8 animate-fade-in">
-          <div className="flex items-center justify-end mb-4">
-            <button
-              onClick={loadSyllabus}
-              disabled={loading}
-              className={`p-1.5 rounded-md border border-slate-200 text-slate-500 hover:bg-slate-50 hover:text-slate-700 transition-colors ${loading ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
-              title="Refresh Syllabus"
-            >
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={loading ? 'animate-spin' : ''}>
-                <path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8" />
-                <path d="M21 3v5h-5" />
-              </svg>
-            </button>
-          </div>
+                  const now = new Date();
+                  const start = exam.start_time ? new Date(exam.start_time) : null;
+                  const end = exam.end_time ? new Date(exam.end_time) : null;
+                  const isUpcoming = Boolean(start && now < start && !isSubmitted && !isInProgress);
+                  const isEnded = Boolean(end && now > end && !isSubmitted && !isInProgress);
 
-          {loading ? (
-            <div className="bg-white border border-slate-200 rounded-xl p-8 text-center shadow-sm">
-              <div className="w-7 h-7 border-4 border-slate-200 border-t-green-500 rounded-full animate-spin mx-auto mb-3" />
-              <p className="text-slate-500 text-[0.88rem]">Loading syllabus…</p>
-            </div>
-          ) : syllabusList.length === 0 ? (
-            <div className="bg-white border border-slate-200 rounded-xl p-10 flex flex-col items-center justify-center text-center shadow-sm">
-              <div className="text-[3rem] mb-3">📚</div>
-              <h3 className="text-lg font-bold text-slate-900 mb-1">No syllabus yet</h3>
-              <p className="text-slate-500 text-[0.85rem]">
-                The teacher has not uploaded any syllabus material for this class yet.
-              </p>
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 gap-3">
-              {syllabusList.map((s) => {
-                const isPdf = s.file_ref.toLowerCase().endsWith('.pdf');
-                return (
-                  <div key={s.id} className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm hover:shadow-md hover:border-slate-300 transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                    <div className="flex items-start gap-4">
-                      <div className={`w-12 h-12 rounded-lg flex items-center justify-center text-2xl shrink-0 ${isPdf ? 'bg-red-50 text-red-500' : 'bg-slate-100 text-slate-400'}`}>
-                        {isPdf ? '📕' : '📄'}
-                      </div>
-                      <div>
-                        <h4 className="font-bold text-slate-900 text-[0.95rem] mb-0.5">{s.title}</h4>
-                        <p className="text-slate-500 text-[0.8rem] mb-1 font-mono">{s.file_ref.split('/').pop()}</p>
-                        <p className="text-slate-400 text-[0.75rem]">
-                          Uploaded {new Date(s.created_at).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}
-                        </p>
-                        {!isPdf && <p className="text-amber-600 text-[0.75rem] font-semibold mt-1">Unsupported file format</p>}
-                        {s.status && (
-                          <div className="flex items-center gap-2 mt-1.5">
-                            <span className={`text-[0.7rem] px-2 py-0.5 rounded-full font-semibold ${s.status === 'READY' ? 'bg-green-100 text-green-700' : s.status === 'FAILED' ? 'bg-red-100 text-red-700' : 'bg-blue-100 text-blue-700'}`}>
-                              {s.status === 'READY' ? 'Processed' : s.status === 'FAILED' ? 'Failed' : `Processing: ${s.stage?.replace('_', ' ') || 'Starting'}`}
+                  const hasScore =
+                    exam.attempt?.total_marks !== undefined && exam.attempt?.total_marks !== null;
+                  const rawScore = hasScore ? Number(exam.attempt!.total_marks) : 0;
+                  const adjScore = Number(exam.attempt?.adjustment_marks || 0);
+                  const scoreVal = hasScore ? Math.max(0, rawScore + adjScore) : null;
+                  const scorePct =
+                    hasScore && exam.total_marks > 0
+                      ? Math.round((scoreVal! / exam.total_marks) * 100)
+                      : null;
+
+                  return (
+                    <article
+                      key={exam.id}
+                      className="bg-surface-container-lowest border border-outline-variant p-8 relative"
+                    >
+                      {isSubmitted && <div className="absolute top-0 left-0 right-0 h-1 bg-primary"></div>}
+
+                      {/* Top Status Bar & Score Highlights */}
+                      <div className="flex flex-wrap items-start justify-between gap-6 mb-6">
+                        <div className="flex flex-col gap-1.5">
+                          <div className="flex items-center gap-3 mb-1">
+                            {isSubmitted ? (
+                              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-black text-white font-sans text-[10px] uppercase font-bold tracking-widest">
+                                <span className="w-1.5 h-1.5 bg-primary"></span>
+                                SUBMITTED
+                              </span>
+                            ) : isInProgress ? (
+                              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-primary text-white font-sans text-[10px] uppercase font-bold tracking-widest">
+                                <span className="w-1.5 h-1.5 bg-white animate-pulse"></span>
+                                IN PROGRESS
+                              </span>
+                            ) : isUpcoming ? (
+                              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-surface-container text-secondary font-sans text-[10px] uppercase font-bold tracking-widest">
+                                <span className="material-symbols-outlined text-[12px]">lock</span>
+                                UPCOMING
+                              </span>
+                            ) : isEnded ? (
+                              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-surface-container text-secondary font-sans text-[10px] uppercase font-bold tracking-widest">
+                                WINDOW CLOSED
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-black text-white font-sans text-[10px] uppercase font-bold tracking-widest">
+                                <span className="w-1.5 h-1.5 bg-primary"></span>
+                                AVAILABLE
+                              </span>
+                            )}
+                          </div>
+                          <h2 className="font-serif text-2xl md:text-3xl text-on-surface font-semibold tracking-tight">
+                            {exam.title}
+                          </h2>
+                        </div>
+
+                        {/* Grade Badge / Numerical Result OR Weightage */}
+                        {isSubmitted ? (
+                          <div className="flex flex-col items-end bg-surface-container-low border border-outline-variant px-6 py-4">
+                            <span className="font-sans text-[10px] text-secondary uppercase tracking-widest font-bold mb-1">
+                              Automated Score
                             </span>
-                            {s.error && <span className="text-red-500 text-[0.75rem] max-w-[200px] truncate" title={s.error}>{s.error}</span>}
+                            <div className="flex items-baseline gap-2">
+                              <span className="font-serif text-4xl text-primary font-bold">
+                                {scoreVal !== null ? scoreVal : "—"}
+                              </span>
+                              <span className="font-sans text-xl font-bold text-secondary">
+                                / {exam.total_marks}
+                              </span>
+                              {scorePct !== null && (
+                                <span className="ml-2 px-2 py-0.5 bg-black text-white font-sans text-[11px] font-bold tracking-widest">
+                                  {scorePct}%
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="flex flex-col items-end bg-surface-container-low border border-outline-variant px-5 py-3">
+                            <span className="font-sans text-[10px] text-secondary uppercase tracking-widest font-bold">
+                              Weightage
+                            </span>
+                            <span className="font-sans text-base font-bold text-on-surface tracking-wider uppercase">
+                              {exam.total_marks} Points
+                            </span>
                           </div>
                         )}
                       </div>
-                    </div>
-                    <div className="flex items-center gap-2 shrink-0 self-end sm:self-auto">
-                      <button
-                        onClick={() => viewSyllabus(s.id)}
-                        disabled={!isPdf}
-                        className={`px-3.5 py-1.5 rounded-md border text-[0.8rem] font-semibold transition-colors ${isPdf
-                            ? 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50 hover:border-slate-300'
-                            : 'border-slate-100 bg-slate-50 text-slate-400 cursor-not-allowed'
-                          }`}
-                      >
-                        View PDF
-                      </button>
-                      <button
-                        onClick={() => downloadSyllabus(s.id, s.title)}
-                        className="px-3.5 py-1.5 rounded-md border border-slate-200 bg-white text-slate-700 text-[0.8rem] font-semibold hover:bg-slate-50 hover:border-slate-300 transition-colors"
-                      >
-                        Download
-                      </button>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
-      )}
 
-      {activeTab === "exams" && (
-        <div className="mb-8 animate-fade-in">
-          <div className="flex items-center justify-end mb-4">
-            <button
-              onClick={loadExams}
-              disabled={examsLoading}
-              className={`p-1.5 rounded-md border border-slate-200 text-slate-500 hover:bg-slate-50 hover:text-slate-700 transition-colors ${examsLoading ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
-              title="Refresh Exams"
-            >
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={examsLoading ? 'animate-spin' : ''}>
-                <path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8" />
-                <path d="M21 3v5h-5" />
-              </svg>
-            </button>
-          </div>
-
-          {examsLoading ? (
-            <div className="bg-white border border-slate-200 rounded-xl p-8 text-center shadow-sm">
-              <div className="w-7 h-7 border-4 border-slate-200 border-t-blue-500 rounded-full animate-spin mx-auto mb-3" />
-              <p className="text-slate-500 text-[0.88rem]">Loading exams…</p>
-            </div>
-          ) : examList.length === 0 ? (
-            <div className="bg-white border border-slate-200 rounded-xl p-10 flex flex-col items-center justify-center text-center shadow-sm">
-              <div className="text-[3rem] mb-3">📝</div>
-              <h3 className="text-lg font-bold text-slate-900 mb-1">No exams available</h3>
-              <p className="text-slate-500 text-[0.85rem]">
-                There are no published exams for this class at the moment.
-              </p>
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {examList.map((exam) => {
-                const now = new Date();
-                const stStr = exam.start_time ? (exam.start_time.match(/(Z|[+-]\d{2}(:\d{2})?)$/) ? exam.start_time : exam.start_time + 'Z') : null;
-                const etStr = exam.end_time ? (exam.end_time.match(/(Z|[+-]\d{2}(:\d{2})?)$/) ? exam.end_time : exam.end_time + 'Z') : null;
-                const startTime = stStr ? new Date(stStr) : null;
-                const endTime = etStr ? new Date(etStr) : null;
-
-                let statusInfo = { label: "Available", color: "bg-blue-100 text-blue-700", actionText: "Take Exam", actionDisabled: true, href: `/student/exams/${exam.id}` };
-
-                if (exam.attempt) {
-                  if (exam.attempt.status === 'submitted' || exam.attempt.status === 'evaluated') {
-                    statusInfo = { label: "Submitted", color: "bg-green-100 text-green-700", actionText: "View Result", actionDisabled: false, href: `/student/exams/${exam.id}/submitted` };
-                  } else {
-                    statusInfo = { label: "In Progress", color: "bg-amber-100 text-amber-700", actionText: "Resume Exam", actionDisabled: false, href: `/student/exams/${exam.id}/attempt` };
-                  }
-                } else if (startTime && endTime) {
-                  if (now < startTime) {
-                    statusInfo = { label: "Upcoming", color: "bg-indigo-100 text-indigo-700", actionText: "Starts soon", actionDisabled: true, href: "#" };
-                  } else if (now > endTime) {
-                    statusInfo = { label: "Ended", color: "bg-slate-100 text-slate-600", actionText: "Missed", actionDisabled: true, href: "#" };
-                  } else {
-                    statusInfo = { label: "Active", color: "bg-blue-100 text-blue-700", actionText: "Take Exam", actionDisabled: false, href: `/student/exams/${exam.id}` };
-                  }
-                }
-
-                return (
-                  <div key={exam.id} className="bg-white border border-slate-200 rounded-xl p-6 shadow-sm hover:shadow-md transition-shadow flex flex-col h-full">
-                    <div className="flex justify-between items-start mb-3">
-                      <h4 className="font-bold text-slate-900 text-lg line-clamp-2 pr-4">{exam.title}</h4>
-                      <span className={`text-[0.7rem] px-2.5 py-1 rounded-full font-bold uppercase tracking-wider shrink-0 ${statusInfo.color}`}>
-                        {statusInfo.label}
-                      </span>
-                    </div>
-
-                    <div className="flex flex-wrap gap-x-4 gap-y-2 text-[0.85rem] text-slate-600 mb-4">
-                      <div className="flex items-center gap-1.5"><span className="font-semibold text-slate-700">Marks:</span> {exam.total_marks}</div>
-                      <div className="flex items-center gap-1.5"><span className="font-semibold text-slate-700">Duration:</span> {exam.duration_minutes} min</div>
-                      <div className="flex items-center gap-1.5"><span className="font-semibold text-slate-700">Level:</span> <span className="capitalize">{exam.difficulty}</span></div>
-                    </div>
-
-                    {(startTime && endTime) && (
-                      <div className="bg-slate-50 rounded-lg p-3 text-[0.8rem] text-slate-600 mb-5 border border-slate-100 flex-grow">
-                        <div className="flex items-center gap-2 mb-1">
-                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>
-                          <span className="font-medium text-slate-700">Window:</span>
+                      {/* Exam Parameters Strip */}
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 p-4 bg-surface-container-low border border-outline-variant mb-6 text-xs uppercase tracking-wider font-sans text-secondary">
+                        <div className="flex items-center gap-2">
+                          <span className="material-symbols-outlined text-[16px] text-primary">military_tech</span>
+                          <span>
+                            Marks: <strong className="text-on-surface font-bold">{exam.total_marks} PTS</strong>
+                          </span>
                         </div>
-                        <div className="pl-6 space-y-0.5">
-                          <div><span className="text-slate-400">Opens:</span> {startTime.toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" })}</div>
-                          <div><span className="text-slate-400">Closes:</span> {endTime.toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" })}</div>
+                        <div className="flex items-center gap-2">
+                          <span className="material-symbols-outlined text-[16px] text-primary">timer</span>
+                          <span>
+                            Duration:{" "}
+                            <strong className="text-on-surface font-bold">{exam.duration_minutes} MIN</strong>
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="material-symbols-outlined text-[16px] text-primary">speed</span>
+                          <span>
+                            Level:{" "}
+                            <strong className="text-on-surface font-bold">
+                              {(exam.difficulty || "MEDIUM").toUpperCase()}
+                            </strong>
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="material-symbols-outlined text-[16px] text-primary">
+                            format_list_numbered
+                          </span>
+                          <span>
+                            Mode: <strong className="text-on-surface font-bold">ONLINE CBT</strong>
+                          </span>
                         </div>
                       </div>
-                    )}
 
-                    <a
-                      href={statusInfo.href}
-                      className={`w-full py-2.5 rounded-lg font-bold text-[0.9rem] transition-colors mt-auto text-center block ${statusInfo.actionDisabled === false
-                          ? "bg-[#2563eb] hover:bg-[#1d4ed8] text-white cursor-pointer"
-                          : "bg-slate-100 text-slate-400 pointer-events-none border border-slate-200"
-                        }`}
-                    >
-                      {statusInfo.actionText}
-                    </a>
-                  </div>
-                );
-              })}
+                      {/* Schedule / Window & Submission Callout */}
+                      <div className="bg-surface-container-low border-l-2 border-l-black border-y border-r border-outline-variant p-4 mb-6 flex flex-col gap-2 font-sans text-xs">
+                        <div className="flex items-start sm:items-center justify-between flex-wrap gap-2 text-on-surface">
+                          <div className="flex items-center gap-2">
+                            <span className="material-symbols-outlined text-[16px] text-primary">
+                              calendar_month
+                            </span>
+                            <span className="tracking-wide">
+                              Window:{" "}
+                              <strong className="font-bold">
+                                {formatScheduleWindow(exam.start_time, exam.end_time)}
+                              </strong>
+                            </span>
+                          </div>
+                          <span className="font-sans text-[10px] uppercase font-bold tracking-widest bg-outline-variant px-2 py-0.5 text-secondary">
+                            {isSubmitted ? "Completed" : isEnded ? "Ended" : isUpcoming ? "Scheduled" : "Active"}
+                          </span>
+                        </div>
+                        {isSubmitted && exam.attempt?.completed_at && (
+                          <div className="flex items-center gap-2 text-secondary pt-1 border-t border-outline-variant/60">
+                            <span className="material-symbols-outlined text-[15px] text-primary">task_alt</span>
+                            <span className="tracking-wide">
+                              Submitted on{" "}
+                              <strong className="text-on-surface font-bold">
+                                {formatSubmissionDate(exam.attempt.completed_at, exam.attempt.started_at)}
+                              </strong>
+                            </span>
+                          </div>
+                        )}
+                        {isInProgress && exam.attempt?.deadline && (
+                          <div className="flex items-center gap-2 text-secondary pt-1 border-t border-outline-variant/60">
+                            <span className="material-symbols-outlined text-[15px] text-primary">alarm</span>
+                            <span className="tracking-wide">
+                              Active Deadline:{" "}
+                              <strong className="text-on-surface font-bold">
+                                {new Date(exam.attempt.deadline).toLocaleTimeString("en-US", {
+                                  hour: "numeric",
+                                  minute: "2-digit",
+                                  hour12: true,
+                                })}
+                              </strong>
+                            </span>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Primary Call to Action */}
+                      <div className="flex flex-col sm:flex-row items-center justify-between gap-4 pt-2">
+                        {isSubmitted ? (
+                          <a
+                            href={`/student/exams/${exam.id}/result`}
+                            className="w-full sm:w-auto inline-flex items-center justify-center gap-3 px-8 py-3.5 bg-black hover:bg-primary text-white font-sans text-xs font-bold tracking-widest uppercase transition-colors"
+                          >
+                            <span>VIEW RESULT &amp; TEST DIAGNOSTICS</span>
+                            <span className="font-bold text-sm">→</span>
+                          </a>
+                        ) : isInProgress ? (
+                          <a
+                            href={`/student/exams/${exam.id}/attempt`}
+                            className="w-full sm:w-auto inline-flex items-center justify-center gap-3 px-8 py-3.5 bg-primary hover:bg-primary-dark text-white font-sans text-xs font-bold tracking-widest uppercase transition-colors"
+                          >
+                            <span>RESUME ASSESSMENT</span>
+                            <span className="font-bold text-sm">→</span>
+                          </a>
+                        ) : isUpcoming ? (
+                          <button
+                            disabled
+                            type="button"
+                            className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-8 py-3.5 border border-outline-variant bg-surface-container text-secondary font-sans text-xs font-bold tracking-widest uppercase cursor-not-allowed opacity-70"
+                          >
+                            <span className="material-symbols-outlined text-[16px]">lock</span>
+                            <span>START ASSESSMENT</span>
+                          </button>
+                        ) : isEnded ? (
+                          <button
+                            disabled
+                            type="button"
+                            className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-8 py-3.5 border border-outline-variant bg-surface-container text-secondary font-sans text-xs font-bold tracking-widest uppercase cursor-not-allowed opacity-70"
+                          >
+                            <span>EXAM WINDOW CLOSED</span>
+                          </button>
+                        ) : (
+                          <a
+                            href={`/student/exams/${exam.id}`}
+                            className="w-full sm:w-auto inline-flex items-center justify-center gap-3 px-8 py-3.5 bg-black hover:bg-primary text-white font-sans text-xs font-bold tracking-widest uppercase transition-colors"
+                          >
+                            <span>START ASSESSMENT</span>
+                            <span className="font-bold text-sm">→</span>
+                          </a>
+                        )}
+                      </div>
+                    </article>
+                  );
+                })
+              )}
+            </>
+          )}
+
+          {/* Sub-tab: Syllabus */}
+          {subTab === "syllabus" && (
+            <div className="flex flex-col gap-6">
+              <div className="flex items-center justify-between border-b border-outline-variant pb-3 mb-2">
+                <div>
+                  <h2 className="font-serif text-2xl font-normal text-on-surface">Curriculum Modules</h2>
+                  <p className="font-sans text-xs text-secondary uppercase tracking-wider mt-0.5">
+                    Automated test harness synthesized from accredited course lecture PDFs
+                  </p>
+                </div>
+                <span className="font-sans text-[10px] font-bold text-primary uppercase tracking-[0.2em] border border-outline-variant bg-surface-container-low px-2.5 py-1">
+                  {syllabusList.length} Modules Total
+                </span>
+              </div>
+
+              {syllabusLoading ? (
+                <div className="bg-surface-container-lowest border border-outline-variant p-12 text-center font-sans text-xs font-bold tracking-widest uppercase text-secondary">
+                  LOADING COURSE SYLLABUS...
+                </div>
+              ) : syllabusList.length === 0 ? (
+                <div className="bg-surface-container-lowest border border-outline-variant p-12 text-center">
+                  <span className="material-symbols-outlined text-[48px] text-secondary mb-3 block">
+                    folder_open
+                  </span>
+                  <h3 className="font-serif text-2xl text-on-surface mb-1">No Syllabus Uploaded</h3>
+                  <p className="font-sans text-sm text-secondary">
+                    Your instructor has not uploaded any syllabus documents for this class yet.
+                  </p>
+                </div>
+              ) : (
+                <div className="flex flex-col gap-4">
+                  {syllabusList.map((doc) => {
+                    const isPdf = doc.file_ref.toLowerCase().endsWith(".pdf");
+                    return (
+                      <article
+                        key={doc.id}
+                        className="bg-surface-container-lowest border border-outline-variant p-6 flex flex-col gap-5 hover:border-black transition-colors"
+                      >
+                        <div className="flex flex-col sm:flex-row items-start justify-between gap-4">
+                          <div className="flex items-start gap-4">
+                            <div className="w-12 h-12 border border-black bg-black flex items-center justify-center text-white shrink-0">
+                              <span className="material-symbols-outlined text-[24px]">picture_as_pdf</span>
+                            </div>
+                            <div className="flex flex-col gap-1.5 min-w-0">
+                              <div className="flex flex-wrap items-center gap-2.5">
+                                <h3 className="font-serif text-lg font-medium text-on-surface">{doc.title}</h3>
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 border border-outline-variant bg-surface-container-low text-on-surface font-sans text-[10px] font-bold uppercase tracking-wider">
+                                  <span className="w-1.5 h-1.5 bg-primary inline-block"></span>
+                                  Processed
+                                </span>
+                              </div>
+                              <p className="font-sans text-xs text-secondary tracking-wider uppercase">
+                                {doc.file_ref.split("/").pop()} &bull; Uploaded{" "}
+                                {new Date(doc.created_at).toLocaleDateString()}
+                              </p>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-2 shrink-0 self-end sm:self-start">
+                            <button
+                              onClick={() => viewSyllabus(doc.id)}
+                              disabled={!isPdf}
+                              className="inline-flex items-center gap-1.5 px-3.5 py-2 border border-black bg-primary hover:bg-primary-dark text-white font-sans text-[11px] font-bold uppercase tracking-wider transition-colors cursor-pointer disabled:opacity-30"
+                              type="button"
+                            >
+                              <span className="material-symbols-outlined text-[15px]">visibility</span>
+                              <span>View PDF</span>
+                            </button>
+                            <button
+                              onClick={() => downloadSyllabus(doc.id, doc.title)}
+                              className="inline-flex items-center gap-1.5 px-3.5 py-2 border border-black bg-surface-container-lowest hover:!bg-brand-crimson hover:!border-brand-crimson hover:!text-white text-on-surface font-sans text-[11px] font-bold uppercase tracking-wider transition-colors cursor-pointer"
+                              type="button"
+                            >
+                              <span className="material-symbols-outlined text-[15px]">download</span>
+                              <span>Download</span>
+                            </button>
+                          </div>
+                        </div>
+                      </article>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           )}
         </div>
-      )}
+
+        {/* Right Rail: Performance Analytics & Proctoring Environment (4 cols) */}
+        <aside className="lg:col-span-4 flex flex-col gap-6">
+          {/* Performance Analytics Panel */}
+          <div className="bg-surface-container-lowest border border-outline-variant p-6 flex flex-col gap-5">
+            <div className="flex items-center justify-between border-b border-outline-variant pb-3">
+              <div className="flex items-center gap-2">
+                <span className="material-symbols-outlined text-primary text-[18px]">analytics</span>
+                <h3 className="font-sans text-xs font-bold uppercase tracking-widest text-on-surface">
+                  Class Performance
+                </h3>
+              </div>
+              <span className="text-[10px] font-bold uppercase tracking-wider text-secondary bg-surface-container-low px-2 py-0.5 border border-outline-variant">
+                Live
+              </span>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="p-3 bg-surface-container-low border border-outline-variant flex flex-col">
+                <span className="font-sans text-[10px] text-secondary uppercase tracking-widest font-bold">
+                  Assigned
+                </span>
+                <span className="font-serif text-2xl font-bold text-on-surface mt-1">{examList.length}</span>
+              </div>
+              <div className="p-3 bg-surface-container-low border border-outline-variant flex flex-col">
+                <span className="font-sans text-[10px] text-secondary uppercase tracking-widest font-bold">
+                  Completed
+                </span>
+                <span className="font-serif text-2xl font-bold text-primary mt-1">{completedExams.length}</span>
+              </div>
+            </div>
+            <div className="p-3 bg-surface-container-low border border-outline-variant flex items-center justify-between">
+              <span className="font-sans text-[10px] text-secondary uppercase tracking-widest font-bold">
+                Completion Rate
+              </span>
+              <span className="font-sans text-sm font-bold text-on-surface">{completionRate}%</span>
+            </div>
+          </div>
+
+          {/* Testing Rules & Environment Specifications */}
+          <div className="bg-surface-container-lowest border border-outline-variant p-6 flex flex-col gap-4">
+            <div className="flex items-center gap-2 border-b border-outline-variant pb-3">
+              <span className="material-symbols-outlined text-primary text-[18px]">shield</span>
+              <h3 className="font-sans text-xs font-bold uppercase tracking-widest text-on-surface">
+                Proctoring Rules
+              </h3>
+            </div>
+            <ul className="flex flex-col gap-3 font-sans text-xs text-secondary">
+              <li className="flex items-start gap-2.5">
+                <span className="material-symbols-outlined text-primary text-[16px] shrink-0 mt-0.5">videocam</span>
+                <span>
+                  <strong className="text-on-surface">Webcam Verification:</strong> Periodic video frame checks during active exam sessions.
+                </span>
+              </li>
+              <li className="flex items-start gap-2.5">
+                <span className="material-symbols-outlined text-primary text-[16px] shrink-0 mt-0.5">fullscreen</span>
+                <span>
+                  <strong className="text-on-surface">Lockdown Mode:</strong> Enforces full-screen window and tracks defocus/tab-switching.
+                </span>
+              </li>
+              <li className="flex items-start gap-2.5">
+                <span className="material-symbols-outlined text-primary text-[16px] shrink-0 mt-0.5">timer</span>
+                <span>
+                  <strong className="text-on-surface">Server Timer:</strong> Auto-submits responses once exam time limit expires.
+                </span>
+              </li>
+            </ul>
+          </div>
+
+          {/* Quick Help Pod */}
+          <div className="bg-surface-container-low border border-outline-variant p-6 flex flex-col gap-3">
+            <div className="flex items-center gap-2">
+              <span className="material-symbols-outlined text-primary text-[18px]">help</span>
+              <h3 className="font-sans text-xs font-bold uppercase tracking-widest text-on-surface">
+                Assessment Support
+              </h3>
+            </div>
+            <p className="font-sans text-xs text-secondary leading-relaxed">
+              Encountering connectivity issues or technical difficulties? Progress is continuously auto-saved.
+              Reconnect to resume without loss of responses.
+            </p>
+            <div className="pt-2">
+              <button
+                onClick={handleSync}
+                type="button"
+                className="inline-flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-on-surface hover:!text-primary transition-colors cursor-pointer"
+              >
+                <span className="material-symbols-outlined text-[15px]">refresh</span>
+                <span>Verify Network &amp; Sync State</span>
+              </button>
+            </div>
+          </div>
+        </aside>
+      </div>
     </div>
   );
 }

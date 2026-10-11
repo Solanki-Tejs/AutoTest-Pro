@@ -111,6 +111,8 @@ def get_classes_by_teacher(teacher_id: int, db: Session) -> list[dict]:
 def get_class_by_code(code: str, db: Session) -> dict | None:
     """Returns basic class info for a given join code (no sensitive data)."""
     ensure_tables(db)
+    raw_code = code.strip().upper()
+    norm_code = raw_code.replace("-", "")
     result = db.execute(
         text("""
             SELECT
@@ -123,10 +125,10 @@ def get_class_by_code(code: str, db: Session) -> dict | None:
             FROM classes c
             JOIN users u ON u.id = c.teacher_id
             LEFT JOIN class_enrollments r ON r.class_id = c.id
-            WHERE c.join_code = :code
+            WHERE REPLACE(c.join_code, '-', '') = :norm_code OR c.join_code = :raw_code
             GROUP BY c.id, u.name
         """),
-        {"code": code.strip().upper()},
+        {"norm_code": norm_code, "raw_code": raw_code},
     )
     row = result.mappings().first()
     return dict(row) if row else None
@@ -134,16 +136,21 @@ def get_class_by_code(code: str, db: Session) -> dict | None:
 
 def request_to_join_by_code(student_id: int, code: str, db: Session) -> dict:
     ensure_tables(db)
+    raw_code = code.strip().upper()
+    norm_code = raw_code.replace("-", "")
+
     # Resolve class from code
     cls = db.execute(
-        text("SELECT id FROM classes WHERE join_code = :code"),
-        {"code": code.strip().upper()},
-    ).first()
+        text("SELECT id, name, teacher_id FROM classes WHERE REPLACE(join_code, '-', '') = :norm_code OR join_code = :raw_code"),
+        {"norm_code": norm_code, "raw_code": raw_code},
+    ).mappings().first()
 
     if not cls:
         return {"not_found": True}
 
-    class_id = cls[0]
+    class_id = cls["id"]
+    class_name = cls["name"]
+    teacher_id = cls["teacher_id"]
 
     # Check if already requested
     existing = db.execute(
@@ -164,6 +171,21 @@ def request_to_join_by_code(student_id: int, code: str, db: Session) -> dict:
     )
     row = result.mappings().one()
     db.commit()
+
+    # Notify Teacher about the new join request
+    try:
+        from services.notification_service import create_notification
+        create_notification(
+            user_id=teacher_id,
+            title="New Join Request",
+            message=f"A student has requested to join your class '{class_name}'.",
+            notification_type="class",
+            link="/teacher/dashboard",
+            db=db
+        )
+    except Exception as e:
+        print(f"[NOTIFICATION ERROR] {e}")
+
     return dict(row)
 
 
@@ -231,6 +253,28 @@ def update_request_status(request_id: int, status: str, db: Session) -> dict:
     db.commit()
     if not row:
         return {}
+
+    # Notify Student about the enrollment status change
+    try:
+        from services.notification_service import create_notification
+        cls_info = db.execute(
+            text("SELECT name FROM classes WHERE id = :cid"),
+            {"cid": row["class_id"]}
+        ).mappings().first()
+        class_name = cls_info["name"] if cls_info else "your class"
+
+        status_text = "approved! You now have full access to class materials and exams." if status == "approved" else f"{status}."
+        create_notification(
+            user_id=row["student_id"],
+            title=f"Class Join Request {status.capitalize()}",
+            message=f"Your request to join '{class_name}' was {status_text}",
+            notification_type="class",
+            link="/student/dashboard",
+            db=db
+        )
+    except Exception as e:
+        print(f"[NOTIFICATION ERROR] {e}")
+
     return dict(row)
 
 

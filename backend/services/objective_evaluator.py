@@ -1,4 +1,14 @@
+import re
+from typing import Any
 from datetime import datetime, timezone
+
+def _normalize_key(val: Any) -> str:
+    s = str(val).strip().lower()
+    # If starts with single letter followed by colon or space or period e.g. "b: ..." or "option b"
+    m = re.search(r'\b([a-z])\b', s)
+    if m:
+        return m.group(1)
+    return s
 
 def evaluate_objective(student_answer: dict, official_answer: dict, question_metadata: dict) -> dict:
     max_marks = float(question_metadata.get("mark", 1))
@@ -15,8 +25,9 @@ def evaluate_objective(student_answer: dict, official_answer: dict, question_met
     elif isinstance(official_key, str):
         official_key = [official_key]
 
-    student_resp_set = {str(x).strip().lower() for x in student_resp if str(x).strip()}
-    official_key_set = {str(x).strip().lower() for x in official_key if str(x).strip()}
+    student_resp_set = {_normalize_key(x) for x in student_resp if str(x).strip()}
+    official_key_set = {_normalize_key(x) for x in official_key if str(x).strip()}
+
 
     if not student_resp_set:
         return {

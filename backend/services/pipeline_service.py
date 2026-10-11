@@ -40,6 +40,29 @@ def run_syllabus_pipeline(syllabus_id: UUID, file_ref: str, db_factory):
             
             # 3. Mark COMPLETED
             set_status(syllabus_id, "READY", "COMPLETED", db)
+
+            try:
+                from services.notification_service import create_notification
+                s_info = db.execute(
+                    text("""
+                        SELECT s.title, c.teacher_id, c.name as class_name 
+                        FROM syllabus s 
+                        JOIN classes c ON s.class_id = c.id 
+                        WHERE s.id = :syllabus_id
+                    """),
+                    {"syllabus_id": syllabus_id}
+                ).mappings().first()
+                if s_info:
+                    create_notification(
+                        user_id=s_info["teacher_id"],
+                        title="Syllabus Processed",
+                        message=f"Syllabus '{s_info['title']}' in '{s_info['class_name']}' has been processed and is ready for exam blueprints.",
+                        notification_type="syllabus",
+                        link="/teacher/dashboard",
+                        db=db
+                    )
+            except Exception as notif_err:
+                print(f"[NOTIFICATION ERROR] {notif_err}")
             
         total_time = time.perf_counter() - pipeline_start
         print(f"{'-'*75}")
@@ -48,6 +71,7 @@ def run_syllabus_pipeline(syllabus_id: UUID, file_ref: str, db_factory):
         print(f"  * Topic Extraction Time:     {topic_time:.2f}s")
         print(f"  * Total Processing Time:     {total_time:.2f}s")
         print(f"{'='*75}\n")
+
             
     except Exception as e:
         elapsed = time.perf_counter() - pipeline_start
