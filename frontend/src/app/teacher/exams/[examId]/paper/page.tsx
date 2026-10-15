@@ -7,7 +7,7 @@ import {
   Exam, getExam, getExamBlueprint, Blueprint,
   QuestionBank, getQuestionBank,
   generatePaper, getGenerationStatus,
-  editQuestion, regenerateQuestion, deleteQuestion, approveQuestionBank,
+  editQuestion, regenerateQuestion, approveQuestionBank,
   Question
 } from "@/app/lib/exams";
 import EditableQuestionCard from "@/app/components/EditableQuestionCard";
@@ -151,6 +151,7 @@ export default function PaperEditorPage() {
     try {
       await approveQuestionBank(token, examId);
       toast.success("Paper approved successfully!");
+      window.dispatchEvent(new CustomEvent("exam-updated"));
       router.push(`/teacher/exams/${examId}/answers`);
     } catch (e: any) {
       toast.error(e.message || "Failed to approve paper");
@@ -191,23 +192,6 @@ export default function PaperEditorPage() {
         next.delete(questionId);
         return next;
       });
-    }
-  }
-
-  async function handleDeleteQuestion(questionId: string) {
-    if (!token || !paper) return;
-    try {
-      await deleteQuestion(token, examId, questionId);
-      setPaper(prev => {
-        if (!prev) return prev;
-        const newSecs = prev.question_body.sections.map(sec => ({
-          ...sec,
-          questions: sec.questions.filter(q => q.question_id !== questionId)
-        }));
-        return { ...prev, question_body: { sections: newSecs } };
-      });
-    } catch (e: any) {
-      toast.error(e.message || "Failed to delete question");
     }
   }
 
@@ -321,6 +305,8 @@ export default function PaperEditorPage() {
   if (!exam) return <div className="p-8 text-[#ba1a1a] font-mono text-xs">EXAM_NOT_FOUND // 404</div>;
 
   const isPublished = exam.status === "published";
+  const isPaperApproved = paper?.status === "approved" || exam.status === "ready" || isPublished;
+  const isLocked = isPaperApproved || isPublished;
 
   return (
     <div className="space-y-6">
@@ -362,23 +348,45 @@ export default function PaperEditorPage() {
             </button>
             <button
               onClick={handleGenerateFullPaper}
-              disabled={isPublished}
+              disabled={isLocked}
               className="px-4 py-2.5 bg-surface-container-lowest hover:bg-surface text-on-surface border border-black font-mono text-xs uppercase tracking-wider font-bold shadow-[2px_2px_0px_#111111] active:translate-x-[1px] active:translate-y-[1px] active:shadow-none transition-all cursor-pointer flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <span className="material-symbols-outlined text-[16px]">refresh</span>
               <span>Regenerate All</span>
             </button>
-            <button
-              onClick={handleApprove}
-              disabled={isPublished}
-              className="px-6 py-2.5 bg-[#0047ff] hover:bg-black text-white font-mono text-xs uppercase tracking-wider font-bold border border-black shadow-[3px_3px_0px_#111111] active:translate-x-[1px] active:translate-y-[1px] active:shadow-none transition-all cursor-pointer flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              <span>Approve Paper</span>
-              <span className="material-symbols-outlined text-[16px]">arrow_forward</span>
-            </button>
+            {isPaperApproved ? (
+              <button
+                onClick={() => router.push(`/teacher/exams/${examId}/answers`)}
+                className="px-6 py-2.5 bg-[#005430] hover:bg-black text-white font-mono text-xs uppercase tracking-wider font-bold border border-black shadow-[3px_3px_0px_#111111] active:translate-x-[1px] active:translate-y-[1px] active:shadow-none transition-all cursor-pointer flex items-center gap-1.5"
+              >
+                <span>Paper Approved • Proceed to Answers</span>
+                <span className="material-symbols-outlined text-[16px]">arrow_forward</span>
+              </button>
+            ) : (
+              <button
+                onClick={handleApprove}
+                disabled={isPublished}
+                className="px-6 py-2.5 bg-[#0047ff] hover:bg-black text-white font-mono text-xs uppercase tracking-wider font-bold border border-black shadow-[3px_3px_0px_#111111] active:translate-x-[1px] active:translate-y-[1px] active:shadow-none transition-all cursor-pointer flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <span>Approve Paper</span>
+                <span className="material-symbols-outlined text-[16px]">arrow_forward</span>
+              </button>
+            )}
           </div>
         )}
       </div>
+
+      {isPublished ? (
+        <div className="p-4 bg-amber-50 border border-amber-300 font-mono text-xs text-amber-900 flex items-center gap-2 print:hidden shadow-[2px_2px_0px_#111111]">
+          <span className="material-symbols-outlined text-[18px]">lock</span>
+          <span>THIS EXAM IS PUBLISHED. QUESTION PAPER IS LOCKED AGAINST MODIFICATIONS.</span>
+        </div>
+      ) : isPaperApproved ? (
+        <div className="p-4 bg-emerald-50 border border-emerald-300 font-mono text-xs text-emerald-900 flex items-center gap-2 print:hidden shadow-[2px_2px_0px_#111111]">
+          <span className="material-symbols-outlined text-[18px] text-emerald-700">check_circle</span>
+          <span>[PAPER APPROVED]: This examination paper has been authorized. Questions are locked in view-only mode.</span>
+        </div>
+      ) : null}
 
       {isStale && paper && !generating && (
         <div className="p-4 bg-amber-50 border border-amber-300 font-mono text-xs text-amber-900 flex items-start gap-3 print:hidden shadow-[2px_2px_0px_#111111]">
@@ -448,11 +456,10 @@ export default function PaperEditorPage() {
                       <div key={q.question_id} className="pdf-block w-full bg-surface">
                         <EditableQuestionCard
                           question={q}
-                          disabled={isPublished}
+                          disabled={isLocked}
                           isRegenerating={regeneratingIds.has(q.question_id)}
                           onSave={(updates) => handleEditSave(q.question_id, updates)}
                           onRegenerate={() => handleRegenerateQuestion(q.question_id)}
-                          onDelete={() => handleDeleteQuestion(q.question_id)}
                         />
                       </div>
                     ))}

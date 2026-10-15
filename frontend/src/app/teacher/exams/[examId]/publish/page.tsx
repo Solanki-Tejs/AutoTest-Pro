@@ -86,6 +86,7 @@ export default function PublishStepPage(props: { params: Promise<{ examId: strin
         start_time: new Date(startTime).toISOString(),
         end_time: new Date(endTime).toISOString(),
       });
+      window.dispatchEvent(new CustomEvent("exam-updated"));
       
       const successMsg = isPublished 
         ? (isFinished ? "Exam republished successfully!" : "Publish details updated successfully!")

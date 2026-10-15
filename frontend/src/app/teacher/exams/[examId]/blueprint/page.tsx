@@ -22,6 +22,7 @@ export default function ExamBlueprintPage() {
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [error, setError] = useState("");
   const [dbBlueprintMarks, setDbBlueprintMarks] = useState<number | null>(null);
+  const [isPaperApproved, setIsPaperApproved] = useState(false);
 
   useEffect(() => {
     const u = getStoredUser();
@@ -37,14 +38,17 @@ export default function ExamBlueprintPage() {
     if (!token || !examId) return;
     async function loadData() {
       try {
-        const [exm, blp, sylls] = await Promise.all([
+        const [exm, blp, sylls, qb] = await Promise.all([
           getExam(token!, examId),
           getExamBlueprint(token!, examId),
-          import("@/app/lib/exams").then(m => m.getAvailableSyllabuses(token!))
+          import("@/app/lib/exams").then(m => m.getAvailableSyllabuses(token!)),
+          import("@/app/lib/exams").then(m => m.getQuestionBank(token!, examId).catch(() => null))
         ]);
         setExam(exm);
         setSections(blp.sections || []);
         setVersion(blp.version || 1);
+        const paperApproved = exm.status === "ready" || exm.status === "published" || qb?.status === "approved";
+        setIsPaperApproved(paperApproved);
 
         const initialMarks = (blp.sections || []).reduce((acc: number, sec: any) => acc + ((parseInt(String(sec.count)) || 0) * (parseInt(String(sec.marks_each)) || 0)), 0);
         setDbBlueprintMarks(initialMarks);
@@ -64,9 +68,13 @@ export default function ExamBlueprintPage() {
   const examTotal = exam?.total_marks || 0;
   const remainingMarks = examTotal - configuredMarks;
 
+  const isPublished = exam?.status === "published";
+  const isLocked = isPaperApproved || isPublished;
+
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const debouncedSave = useCallback(
     debounce(async (secs: Section[], currentMarks: number, t: string, v: number) => {
+      if (isLocked) return;
       const hasInvalidNumeric = secs.some(sec => {
         const c = parseInt(String(sec.count));
         const m = parseInt(String(sec.marks_each));
@@ -97,10 +105,11 @@ export default function ExamBlueprintPage() {
         toast.error("Blueprint save failed");
       }
     }, 1000),
-    [examId, examTotal]
+    [examId, examTotal, isLocked]
   );
 
   const triggerUpdate = (newSections: Section[]) => {
+    if (isLocked) return;
     setSections(newSections);
     const newMarks = newSections.reduce((acc, sec) => acc + ((parseInt(String(sec.count)) || 0) * (parseInt(String(sec.marks_each)) || 0)), 0);
     if (token) {
@@ -109,6 +118,7 @@ export default function ExamBlueprintPage() {
   };
 
   const addSection = () => {
+    if (isLocked) return;
     triggerUpdate([
       ...sections,
       { section: `Section ${String.fromCharCode(65 + sections.length)}`, type: "mcq", count: 1, marks_each: 1, order: sections.length }
@@ -116,18 +126,20 @@ export default function ExamBlueprintPage() {
   };
 
   const updateSection = (index: number, field: keyof Section, value: any) => {
+    if (isLocked) return;
     const next = [...sections];
     next[index] = { ...next[index], [field]: value };
     triggerUpdate(next);
   };
 
   const removeSection = (index: number) => {
+    if (isLocked) return;
     triggerUpdate(sections.filter((_, i) => i !== index));
     toast.success("Section removed");
   };
 
   const handleGenerate = async () => {
-    if (!token) return;
+    if (!token || isLocked) return;
     setError("");
     if (configuredMarks !== examTotal) {
       setError(`Configured marks (${configuredMarks}) must match exam total marks (${examTotal}).`);
@@ -149,8 +161,6 @@ export default function ExamBlueprintPage() {
       toast.error(err.message || "Paper generation failed");
     }
   };
-
-  const isPublished = exam?.status === "published";
 
   if (loading) {
     return (
@@ -209,32 +219,46 @@ export default function ExamBlueprintPage() {
           </div>
 
           <div className="font-mono text-xs font-bold">
-            {saveStatus === "saving" && (
-              <span className="text-secondary flex items-center gap-1.5 px-3 py-1 bg-surface-container border border-outline-variant">
-                <span className="w-2 h-2 rounded-full border border-black border-t-[#0047ff] animate-spin" />
-                SAVING
+            {isLocked ? (
+              <span className="font-mono text-xs text-[#005430] font-bold px-3 py-1 bg-[#e8f5e9] border border-[#81c784]/60 flex items-center gap-1.5">
+                <span className="material-symbols-outlined text-[14px]">lock</span>
+                VIEW ONLY
               </span>
-            )}
-            {saveStatus === "saved" && (
-              <span className="text-[#005430] px-3 py-1 bg-[#e8f5e9] border border-[#81c784]/60">
-                ✓ SAVED
-              </span>
-            )}
-            {saveStatus === "error" && (
-              <span className="text-[#ba1a1a] px-3 py-1 bg-[#ffdad6] border border-[#ba1a1a]/40">
-                ⚠ ERROR
-              </span>
+            ) : (
+              <>
+                {saveStatus === "saving" && (
+                  <span className="text-secondary flex items-center gap-1.5 px-3 py-1 bg-surface-container border border-outline-variant">
+                    <span className="w-2 h-2 rounded-full border border-black border-t-[#0047ff] animate-spin" />
+                    SAVING
+                  </span>
+                )}
+                {saveStatus === "saved" && (
+                  <span className="text-[#005430] px-3 py-1 bg-[#e8f5e9] border border-[#81c784]/60">
+                    ✓ SAVED
+                  </span>
+                )}
+                {saveStatus === "error" && (
+                  <span className="text-[#ba1a1a] px-3 py-1 bg-[#ffdad6] border border-[#ba1a1a]/40">
+                    ⚠ ERROR
+                  </span>
+                )}
+              </>
             )}
           </div>
         </div>
       </div>
 
-      {isPublished && (
+      {isPublished ? (
         <div className="p-4 bg-amber-50 border border-amber-300 font-mono text-xs text-amber-900 flex items-center gap-2">
           <span className="material-symbols-outlined text-[18px]">lock</span>
           <span>THIS EXAM IS PUBLISHED. BLUEPRINT CONFIGURATION IS LOCKED.</span>
         </div>
-      )}
+      ) : isPaperApproved ? (
+        <div className="p-4 bg-emerald-50 border border-emerald-300 font-mono text-xs text-emerald-900 flex items-center gap-2">
+          <span className="material-symbols-outlined text-[18px] text-emerald-700">lock</span>
+          <span>QUESTION PAPER IS APPROVED. BLUEPRINT SPECIFICATION IS LOCKED IN VIEW-ONLY MODE.</span>
+        </div>
+      ) : null}
 
       {/* Main 2-Column Layout */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
@@ -249,8 +273,8 @@ export default function ExamBlueprintPage() {
             </div>
             <button
               onClick={addSection}
-              disabled={isPublished}
-              className="px-4 py-2 bg-surface hover:bg-black hover:text-white text-on-surface border border-black font-mono text-xs uppercase tracking-wider font-bold shadow-[2px_2px_0px_#111111] active:translate-x-[1px] active:translate-y-[1px] active:shadow-none transition-all cursor-pointer disabled:opacity-50 inline-flex items-center gap-1.5"
+              disabled={isLocked}
+              className="px-4 py-2 bg-surface hover:bg-black hover:text-white text-on-surface border border-black font-mono text-xs uppercase tracking-wider font-bold shadow-[2px_2px_0px_#111111] active:translate-x-[1px] active:translate-y-[1px] active:shadow-none transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center gap-1.5"
             >
               <span className="material-symbols-outlined text-[16px]">add</span>
               <span>Add Section</span>
@@ -273,8 +297,8 @@ export default function ExamBlueprintPage() {
               </p>
               <button 
                 onClick={addSection} 
-                disabled={isPublished} 
-                className="px-6 py-2.5 bg-[#0047ff] text-white border border-black shadow-[3px_3px_0px_#111111] font-mono text-xs uppercase tracking-wider font-bold hover:bg-black transition-all cursor-pointer"
+                disabled={isLocked} 
+                className="px-6 py-2.5 bg-[#0047ff] text-white border border-black shadow-[3px_3px_0px_#111111] font-mono text-xs uppercase tracking-wider font-bold hover:bg-black transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 + Add First Section
               </button>
@@ -288,8 +312,8 @@ export default function ExamBlueprintPage() {
                 >
                   <button
                     onClick={() => removeSection(index)}
-                    disabled={isPublished}
-                    className="absolute top-4 right-4 w-7 h-7 border border-black bg-surface text-secondary hover:bg-[#ba1a1a] hover:text-white flex items-center justify-center transition-colors cursor-pointer disabled:opacity-50"
+                    disabled={isLocked}
+                    className="absolute top-4 right-4 w-7 h-7 border border-black bg-surface text-secondary hover:bg-[#ba1a1a] hover:text-white flex items-center justify-center transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                     title="Delete Section"
                   >
                     <span className="material-symbols-outlined text-[16px]">close</span>
@@ -303,7 +327,7 @@ export default function ExamBlueprintPage() {
                       <input
                         type="text"
                         value={section.section}
-                        disabled={isPublished}
+                        disabled={isLocked}
                         onChange={e => updateSection(index, "section", e.target.value)}
                         className="w-full px-3 py-2 bg-surface border border-black focus:border-[#0047ff] outline-none font-sans text-sm disabled:opacity-50"
                       />
@@ -315,9 +339,9 @@ export default function ExamBlueprintPage() {
                       </label>
                       <select
                         value={section.type}
-                        disabled={isPublished}
+                        disabled={isLocked}
                         onChange={e => updateSection(index, "type", e.target.value)}
-                        className="w-full px-3 py-2 bg-surface border border-black focus:border-[#0047ff] outline-none font-sans text-sm disabled:opacity-50 cursor-pointer"
+                        className="w-full px-3 py-2 bg-surface border border-black focus:border-[#0047ff] outline-none font-sans text-sm disabled:opacity-50 cursor-pointer disabled:cursor-not-allowed"
                       >
                         <option value="mcq">MCQ (Objective)</option>
                         <option value="short">Short Conceptual</option>
@@ -333,7 +357,7 @@ export default function ExamBlueprintPage() {
                       <input
                         type="number" min="1"
                         value={section.count}
-                        disabled={isPublished}
+                        disabled={isLocked}
                         onChange={e => updateSection(index, "count", e.target.value)}
                         className="w-full px-3 py-2 bg-surface border border-black focus:border-[#0047ff] outline-none font-mono text-sm font-bold text-center disabled:opacity-50"
                       />
@@ -346,7 +370,7 @@ export default function ExamBlueprintPage() {
                       <input
                         type="number" min="1"
                         value={section.marks_each}
-                        disabled={isPublished}
+                        disabled={isLocked}
                         onChange={e => updateSection(index, "marks_each", e.target.value)}
                         className="w-full px-3 py-2 bg-surface border border-black focus:border-[#0047ff] outline-none font-mono text-sm font-bold text-center disabled:opacity-50"
                       />
@@ -372,14 +396,24 @@ export default function ExamBlueprintPage() {
               <span className="material-symbols-outlined text-[16px]">arrow_back</span>
               <span>Back to Syllabus</span>
             </button>
-            <button
-              onClick={handleGenerate}
-              disabled={isPublished || saveStatus === "saving" || remainingMarks !== 0}
-              className="px-8 py-3 bg-[#0047ff] hover:bg-black text-white font-mono text-xs uppercase tracking-wider font-bold border border-black shadow-[3px_3px_0px_#111111] active:translate-x-[1px] active:translate-y-[1px] active:shadow-none transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center gap-2"
-            >
-              <span>Generate Paper</span>
-              <span className="material-symbols-outlined text-[16px]">arrow_forward</span>
-            </button>
+            {isPaperApproved ? (
+              <button
+                onClick={() => router.push(`/teacher/exams/${examId}/paper`)}
+                className="px-8 py-3 bg-[#0047ff] hover:bg-black text-white font-mono text-xs uppercase tracking-wider font-bold border border-black shadow-[3px_3px_0px_#111111] active:translate-x-[1px] active:translate-y-[1px] active:shadow-none transition-all cursor-pointer inline-flex items-center gap-2"
+              >
+                <span>View Paper Sheet</span>
+                <span className="material-symbols-outlined text-[16px]">arrow_forward</span>
+              </button>
+            ) : (
+              <button
+                onClick={handleGenerate}
+                disabled={isPublished || saveStatus === "saving" || remainingMarks !== 0}
+                className="px-8 py-3 bg-[#0047ff] hover:bg-black text-white font-mono text-xs uppercase tracking-wider font-bold border border-black shadow-[3px_3px_0px_#111111] active:translate-x-[1px] active:translate-y-[1px] active:shadow-none transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center gap-2"
+              >
+                <span>Generate Paper</span>
+                <span className="material-symbols-outlined text-[16px]">arrow_forward</span>
+              </button>
+            )}
           </div>
         </div>
 

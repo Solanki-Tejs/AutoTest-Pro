@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback, use } from "react";
 import { useRouter } from "next/navigation";
 import { getStoredToken, getStoredUser } from "@/app/lib/auth";
-import { getExam, updateExam, getAvailableSyllabuses, SyllabusAvailable, Exam, getExamBlueprint } from "@/app/lib/exams";
+import { getExam, updateExam, getAvailableSyllabuses, SyllabusAvailable, Exam, getExamBlueprint, getQuestionBank } from "@/app/lib/exams";
 import debounce from "lodash/debounce";
 
 export default function SyllabusStepPage(props: { params: Promise<{ examId: string }> }) {
@@ -15,6 +15,7 @@ export default function SyllabusStepPage(props: { params: Promise<{ examId: stri
   const [selectedPdfs, setSelectedPdfs] = useState<Set<string>>(new Set());
   const [hasBlueprint, setHasBlueprint] = useState(false);
   const [isSyllabusLocked, setIsSyllabusLocked] = useState(false);
+  const [isPaperApproved, setIsPaperApproved] = useState(false);
   
   const [loading, setLoading] = useState(true);
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
@@ -33,10 +34,11 @@ export default function SyllabusStepPage(props: { params: Promise<{ examId: stri
     if (!token) return;
     async function load() {
       try {
-        const [exm, sylls, blueprint] = await Promise.all([
+        const [exm, sylls, blueprint, qb] = await Promise.all([
           getExam(token!, params.examId),
           getAvailableSyllabuses(token!),
-          getExamBlueprint(token!, params.examId)
+          getExamBlueprint(token!, params.examId),
+          getQuestionBank(token!, params.examId).catch(() => null)
         ]);
         setExam(exm);
         setSyllabuses(sylls.filter(s => s.class_id === exm.class_id));
@@ -44,6 +46,8 @@ export default function SyllabusStepPage(props: { params: Promise<{ examId: stri
         const blueprintExists = blueprint.sections && blueprint.sections.length > 0;
         setHasBlueprint(blueprintExists);
         setIsSyllabusLocked(blueprintExists);
+        const paperApproved = exm.status === "ready" || exm.status === "published" || qb?.status === "approved";
+        setIsPaperApproved(paperApproved);
       } catch (err: any) {
         console.error(err);
       } finally {
@@ -71,8 +75,11 @@ export default function SyllabusStepPage(props: { params: Promise<{ examId: stri
     [params.examId]
   );
 
+  const isPublished = exam?.status === "published";
+  const isLocked = isPaperApproved || isPublished;
+
   const togglePdf = (id: string) => {
-    if (exam?.status === "published" || (hasBlueprint && isSyllabusLocked)) return;
+    if (isLocked || (hasBlueprint && isSyllabusLocked)) return;
     
     const next = new Set(selectedPdfs);
     if (next.has(id)) next.delete(id);
@@ -83,8 +90,6 @@ export default function SyllabusStepPage(props: { params: Promise<{ examId: stri
       debouncedSave(Array.from(next), token);
     }
   };
-
-  const isPublished = exam?.status === "published";
 
   if (loading) {
     return (
@@ -119,33 +124,47 @@ export default function SyllabusStepPage(props: { params: Promise<{ examId: stri
         </div>
         
         <div className="flex items-center gap-2">
-          {saveStatus === "saving" && (
-            <span className="font-mono text-xs text-secondary flex items-center gap-1.5 px-3 py-1 bg-surface-container border border-outline-variant">
-              <span className="w-2 h-2 rounded-full border border-black border-t-[#0047ff] animate-spin" />
-              SAVING...
+          {isLocked ? (
+            <span className="font-mono text-xs text-[#005430] font-bold px-3 py-1 bg-[#e8f5e9] border border-[#81c784]/60 flex items-center gap-1.5">
+              <span className="material-symbols-outlined text-[14px]">lock</span>
+              VIEW ONLY (LOCKED)
             </span>
-          )}
-          {saveStatus === "saved" && (
-            <span className="font-mono text-xs text-[#005430] font-bold px-3 py-1 bg-[#e8f5e9] border border-[#81c784]/60">
-              ✓ SAVED
-            </span>
-          )}
-          {saveStatus === "error" && (
-            <span className="font-mono text-xs text-[#ba1a1a] font-bold px-3 py-1 bg-[#ffdad6] border border-[#ba1a1a]/40">
-              ⚠ FAILED TO SAVE
-            </span>
+          ) : (
+            <>
+              {saveStatus === "saving" && (
+                <span className="font-mono text-xs text-secondary flex items-center gap-1.5 px-3 py-1 bg-surface-container border border-outline-variant">
+                  <span className="w-2 h-2 rounded-full border border-black border-t-[#0047ff] animate-spin" />
+                  SAVING...
+                </span>
+              )}
+              {saveStatus === "saved" && (
+                <span className="font-mono text-xs text-[#005430] font-bold px-3 py-1 bg-[#e8f5e9] border border-[#81c784]/60">
+                  ✓ SAVED
+                </span>
+              )}
+              {saveStatus === "error" && (
+                <span className="font-mono text-xs text-[#ba1a1a] font-bold px-3 py-1 bg-[#ffdad6] border border-[#ba1a1a]/40">
+                  ⚠ FAILED TO SAVE
+                </span>
+              )}
+            </>
           )}
         </div>
       </div>
 
       {/* Main Box Card */}
       <div className="bg-surface-container-lowest p-6 md:p-8 border border-black shadow-[4px_4px_0px_#111111]">
-        {isPublished && (
+        {isPublished ? (
           <div className="mb-6 p-4 bg-amber-50 border border-amber-300 font-mono text-xs text-amber-900 flex items-center gap-2">
             <span className="material-symbols-outlined text-[18px]">lock</span>
             <span>THIS EXAM IS PUBLISHED. SYLLABUS SELECTION IS IMMUTABLE.</span>
           </div>
-        )}
+        ) : isPaperApproved ? (
+          <div className="mb-6 p-4 bg-emerald-50 border border-emerald-300 font-mono text-xs text-emerald-900 flex items-center gap-2">
+            <span className="material-symbols-outlined text-[18px] text-emerald-700">lock</span>
+            <span>QUESTION PAPER IS APPROVED. CURRICULUM SELECTION IS LOCKED IN VIEW-ONLY MODE.</span>
+          </div>
+        ) : null}
 
         <div className="flex items-center justify-between mb-4 pb-2 border-b border-outline-variant/60">
           <div>
@@ -154,7 +173,7 @@ export default function SyllabusStepPage(props: { params: Promise<{ examId: stri
               Only processed files with confirmed topic extraction are active.
             </p>
           </div>
-          {hasBlueprint && isSyllabusLocked && !isPublished && (
+          {hasBlueprint && isSyllabusLocked && !isLocked && (
             <button
               onClick={() => {
                 if (confirm("Changing syllabus will require you to regenerate the entire paper and all manual edits will be lost. Are you sure?")) {
@@ -184,9 +203,11 @@ export default function SyllabusStepPage(props: { params: Promise<{ examId: stri
                 <div 
                   key={pdf.id} 
                   onClick={() => {
-                    if (!isPublished) togglePdf(pdf.id);
+                    if (!isLocked) togglePdf(pdf.id);
                   }}
-                  className={`border transition-all cursor-pointer p-5 flex items-start gap-4 ${
+                  className={`border transition-all p-5 flex items-start gap-4 ${
+                    isLocked ? "cursor-default" : "cursor-pointer"
+                  } ${
                     isSelected 
                       ? "border-black bg-[#dde1ff]/20 ring-2 ring-[#0047ff] shadow-[3px_3px_0px_#111111]" 
                       : "border-black bg-surface-container-low hover:bg-surface shadow-[2px_2px_0px_#111111]"
@@ -195,9 +216,9 @@ export default function SyllabusStepPage(props: { params: Promise<{ examId: stri
                   <div className="pt-0.5">
                     <input 
                       type="checkbox" 
-                      className="w-5 h-5 accent-[#0047ff] border border-black rounded-none cursor-pointer" 
+                      className="w-5 h-5 accent-[#0047ff] border border-black rounded-none cursor-pointer disabled:cursor-not-allowed" 
                       checked={isSelected}
-                      disabled={isPublished || (hasBlueprint && isSyllabusLocked)}
+                      disabled={isLocked || (hasBlueprint && isSyllabusLocked)}
                       onChange={() => {}} // handled by parent div
                     />
                   </div>

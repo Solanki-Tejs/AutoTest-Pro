@@ -86,6 +86,7 @@ export default function AnswersPage() {
         try {
           const ab = await getAnswerBank(token!, examId);
           setAnswerBank(ab);
+          window.dispatchEvent(new CustomEvent("exam-updated"));
 
           if (ab.question_bank_version !== pb.version) {
             setIsStale(true);
@@ -120,6 +121,7 @@ export default function AnswersPage() {
           const ab = await getAnswerBank(t, eId);
           setAnswerBank(ab);
           toast.success("Answer key generated successfully!");
+          window.dispatchEvent(new CustomEvent("exam-updated"));
         } else if (status.status === "error") {
           clearInterval(interval);
           setGenerating(false);
@@ -154,6 +156,7 @@ export default function AnswersPage() {
     try {
       await approveAnswerBank(token, examId);
       toast.success("Answers approved successfully!");
+      window.dispatchEvent(new CustomEvent("exam-updated"));
       router.push(`/teacher/exams/${examId}/publish`);
     } catch (e: any) {
       toast.error(e.message || "Failed to approve answers");
@@ -161,7 +164,7 @@ export default function AnswersPage() {
   }
 
   async function handleEditSave(answerId: string, updates: any) {
-    if (!token || !answerBank) return;
+    if (!token || !answerBank || exam?.status === "published") return;
     await editAnswer(token, examId, answerId, updates);
     setAnswerBank(prev => {
       if (!prev) return prev;
@@ -171,7 +174,7 @@ export default function AnswersPage() {
   }
 
   async function handleRegenerateAnswer(answerId: string) {
-    if (!token || !answerBank) return;
+    if (!token || !answerBank || exam?.status === "published") return;
     setRegeneratingIds(prev => new Set(prev).add(answerId));
     try {
       const newA = await regenerateAnswer(token, examId, answerId);

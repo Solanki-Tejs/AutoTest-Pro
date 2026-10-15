@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback, use } from "react";
 import { useRouter } from "next/navigation";
 import { getStoredToken, getStoredUser } from "@/app/lib/auth";
 import { fetchMyClasses, ClassItem } from "@/app/lib/classes";
-import { getExam, updateExam, getExamBlueprint } from "@/app/lib/exams";
+import { getExam, updateExam, getExamBlueprint, getQuestionBank } from "@/app/lib/exams";
 import debounce from "lodash/debounce";
 
 export default function GeneralStepPage(props: { params: Promise<{ examId: string }> }) {
@@ -16,6 +16,7 @@ export default function GeneralStepPage(props: { params: Promise<{ examId: strin
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [hasBlueprint, setHasBlueprint] = useState(false);
   const [isTotalMarksLocked, setIsTotalMarksLocked] = useState(false);
+  const [isPaperApproved, setIsPaperApproved] = useState(false);
 
   const [formData, setFormData] = useState({
     title: "",
@@ -42,13 +43,16 @@ export default function GeneralStepPage(props: { params: Promise<{ examId: strin
     if (!token) return;
     async function load() {
       try {
-        const [cls, exam, blueprint] = await Promise.all([
+        const [cls, exam, blueprint, qb] = await Promise.all([
           fetchMyClasses(token!),
           getExam(token!, params.examId),
-          getExamBlueprint(token!, params.examId)
+          getExamBlueprint(token!, params.examId),
+          getQuestionBank(token!, params.examId).catch(() => null)
         ]);
         setClasses(cls);
         setExamStatus(exam.status);
+        const paperApproved = exam.status === "ready" || exam.status === "published" || qb?.status === "approved";
+        setIsPaperApproved(paperApproved);
         const blueprintExists = blueprint.sections && blueprint.sections.length > 0;
         setHasBlueprint(blueprintExists);
         setIsTotalMarksLocked(blueprintExists);
@@ -102,8 +106,10 @@ export default function GeneralStepPage(props: { params: Promise<{ examId: strin
     [params.examId]
   );
 
+  const isLocked = isPaperApproved || examStatus === "published";
+
   const handleChange = (field: keyof typeof formData, value: string) => {
-    if (examStatus === "published") return;
+    if (isLocked) return;
     
     const newData = { ...formData, [field]: value };
     setFormData(newData);
@@ -145,33 +151,47 @@ export default function GeneralStepPage(props: { params: Promise<{ examId: strin
         </div>
         
         <div className="flex items-center gap-2">
-          {saveStatus === "saving" && (
-            <span className="font-mono text-xs text-secondary flex items-center gap-1.5 px-3 py-1 bg-surface-container border border-outline-variant">
-              <span className="w-2 h-2 rounded-full border border-black border-t-[#0047ff] animate-spin" />
-              SAVING...
+          {isLocked ? (
+            <span className="font-mono text-xs text-[#005430] font-bold px-3 py-1 bg-[#e8f5e9] border border-[#81c784]/60 flex items-center gap-1.5">
+              <span className="material-symbols-outlined text-[14px]">lock</span>
+              VIEW ONLY (LOCKED)
             </span>
-          )}
-          {saveStatus === "saved" && (
-            <span className="font-mono text-xs text-[#005430] font-bold px-3 py-1 bg-[#e8f5e9] border border-[#81c784]/60">
-              ✓ AUTO-SAVED
-            </span>
-          )}
-          {saveStatus === "error" && (
-            <span className="font-mono text-xs text-[#ba1a1a] font-bold px-3 py-1 bg-[#ffdad6] border border-[#ba1a1a]/40">
-              ⚠ FAILED TO SAVE
-            </span>
+          ) : (
+            <>
+              {saveStatus === "saving" && (
+                <span className="font-mono text-xs text-secondary flex items-center gap-1.5 px-3 py-1 bg-surface-container border border-outline-variant">
+                  <span className="w-2 h-2 rounded-full border border-black border-t-[#0047ff] animate-spin" />
+                  SAVING...
+                </span>
+              )}
+              {saveStatus === "saved" && (
+                <span className="font-mono text-xs text-[#005430] font-bold px-3 py-1 bg-[#e8f5e9] border border-[#81c784]/60">
+                  ✓ AUTO-SAVED
+                </span>
+              )}
+              {saveStatus === "error" && (
+                <span className="font-mono text-xs text-[#ba1a1a] font-bold px-3 py-1 bg-[#ffdad6] border border-[#ba1a1a]/40">
+                  ⚠ FAILED TO SAVE
+                </span>
+              )}
+            </>
           )}
         </div>
       </div>
 
       {/* Brutalist Box Form Container */}
       <div className="bg-surface-container-lowest p-6 md:p-8 border border-black shadow-[4px_4px_0px_#111111]">
-        {examStatus === "published" && (
+        {examStatus === "published" ? (
           <div className="mb-6 p-4 bg-amber-50 border border-amber-300 font-mono text-xs text-amber-900 flex items-center gap-2">
             <span className="material-symbols-outlined text-[18px]">lock</span>
             <span>THIS EXAM IS PUBLISHED. CORE ATTRIBUTES ARE LOCKED AGAINST MODIFICATION.</span>
           </div>
-        )}
+        ) : isPaperApproved ? (
+          <div className="mb-6 p-4 bg-emerald-50 border border-emerald-300 font-mono text-xs text-emerald-900 flex items-center gap-2">
+            <span className="material-symbols-outlined text-[18px] text-emerald-700">lock</span>
+            <span>QUESTION PAPER IS APPROVED. CORE CONFIGURATION IS LOCKED IN VIEW-ONLY MODE.</span>
+          </div>
+        ) : null}
         {error && (
           <div className="mb-6 p-4 bg-[#ffdad6] border border-[#ba1a1a] text-[#93000a] font-mono text-xs flex items-center gap-2">
             <span className="material-symbols-outlined text-[18px]">error</span>
@@ -187,7 +207,7 @@ export default function GeneralStepPage(props: { params: Promise<{ examId: strin
             </label>
             <input 
               required 
-              disabled={examStatus === "published"}
+              disabled={isLocked}
               type="text" 
               placeholder="e.g. Database Management System Mid-Term"
               className="w-full px-4 py-2.5 bg-surface-container-lowest border border-black focus:border-[#0047ff] focus:ring-1 focus:ring-[#0047ff] outline-none font-sans text-sm disabled:bg-[#efeded] disabled:text-[#747688] transition-colors"
@@ -203,7 +223,7 @@ export default function GeneralStepPage(props: { params: Promise<{ examId: strin
             </label>
             <select 
               required
-              disabled={examStatus === "published"}
+              disabled={isLocked}
               className="w-full px-4 py-2.5 bg-surface-container-lowest border border-black focus:border-[#0047ff] focus:ring-1 focus:ring-[#0047ff] outline-none font-sans text-sm disabled:bg-[#efeded] disabled:text-[#747688] transition-colors cursor-pointer"
               value={formData.class_id} 
               onChange={e => handleChange("class_id", e.target.value)}
@@ -221,7 +241,7 @@ export default function GeneralStepPage(props: { params: Promise<{ examId: strin
                 <label className="block font-mono text-xs font-bold uppercase tracking-wider text-on-surface">
                   Total Marks <span className="text-[#0047ff]">*</span>
                 </label>
-                {hasBlueprint && isTotalMarksLocked && examStatus !== "published" && (
+                {hasBlueprint && isTotalMarksLocked && !isLocked && (
                   <button
                     onClick={() => {
                       if (confirm("Changing total marks will require you to regenerate the entire paper and all manual edits will be lost. Are you sure?")) {
@@ -236,7 +256,7 @@ export default function GeneralStepPage(props: { params: Promise<{ examId: strin
               </div>
               <input 
                 required 
-                disabled={examStatus === "published" || (hasBlueprint && isTotalMarksLocked)}
+                disabled={isLocked || (hasBlueprint && isTotalMarksLocked)}
                 type="number" 
                 min="1"
                 className="w-full px-4 py-2.5 bg-surface-container-lowest border border-black focus:border-[#0047ff] focus:ring-1 focus:ring-[#0047ff] outline-none font-mono text-sm font-bold disabled:bg-[#efeded] disabled:text-[#747688] transition-colors"
@@ -251,7 +271,7 @@ export default function GeneralStepPage(props: { params: Promise<{ examId: strin
               </label>
               <input 
                 required 
-                disabled={examStatus === "published"}
+                disabled={isLocked}
                 type="number" 
                 min="1"
                 className="w-full px-4 py-2.5 bg-surface-container-lowest border border-black focus:border-[#0047ff] focus:ring-1 focus:ring-[#0047ff] outline-none font-mono text-sm font-bold disabled:bg-[#efeded] disabled:text-[#747688] transition-colors"
@@ -266,7 +286,7 @@ export default function GeneralStepPage(props: { params: Promise<{ examId: strin
               </label>
               <select 
                 required
-                disabled={examStatus === "published"}
+                disabled={isLocked}
                 className="w-full px-4 py-2.5 bg-surface-container-lowest border border-black focus:border-[#0047ff] focus:ring-1 focus:ring-[#0047ff] outline-none font-sans text-sm disabled:bg-[#efeded] disabled:text-[#747688] transition-colors cursor-pointer"
                 value={formData.difficulty} 
                 onChange={e => handleChange("difficulty", e.target.value)}

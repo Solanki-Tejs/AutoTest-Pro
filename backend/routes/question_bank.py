@@ -49,7 +49,7 @@ def get_question_bank(exam_id: str, db: Session = Depends(get_db), current_user:
     return qb
 
 @router.put("/{exam_id}/question-bank/approve")
-def approve_question_bank(exam_id: str, db: Session = Depends(get_db), current_user: dict = Depends(get_current_user)):
+def approve_question_bank(exam_id: str, background_tasks: BackgroundTasks, db: Session = Depends(get_db), current_user: dict = Depends(get_current_user)):
     if current_user["role"] != "teacher" or not exam_service.teacher_can_access_exam(int(current_user["sub"]), exam_id, db):
         raise HTTPException(status_code=403, detail="Not authorized")
 
@@ -63,6 +63,14 @@ def approve_question_bank(exam_id: str, db: Session = Depends(get_db), current_u
         
     question_bank_service.update_question_bank(exam_id, qb["version"], {"status": "approved"})
     exam_service.update_exam(exam_id, {"status": "ready"}, db)
+
+    # Automatically trigger answer generation in background if not already started
+    from services.answer_generation_service import generate_answers_job
+    from services.answer_bank_service import get_answer_generation_status
+    current_status = get_answer_generation_status(exam_id)
+    if not current_status or current_status.get("status") not in ["generating", "complete"]:
+        background_tasks.add_task(generate_answers_job, exam_id, db)
+
     return {"status": "approved"}
 
 @router.put("/{exam_id}/questions/{question_id}")
@@ -71,8 +79,9 @@ def edit_question(exam_id: str, question_id: str, updates: QuestionUpdateSchema,
     if not exam or current_user["role"] != "teacher" or not exam_service.teacher_can_access_exam(int(current_user["sub"]), exam_id, db):
         raise HTTPException(status_code=403, detail="Not authorized")
         
-    if exam.get("status") == "published":
-        raise HTTPException(status_code=400, detail="Cannot edit questions for a published exam")
+    qb = question_bank_service.get_active_question_bank(exam_id)
+    if exam.get("status") in ["published", "ready"] or (qb and qb.get("status") == "approved"):
+        raise HTTPException(status_code=400, detail="Cannot edit questions for an approved paper")
         
     success = question_bank_service.edit_question(exam_id, question_id, updates, int(current_user["sub"]))
     if not success:
@@ -85,8 +94,9 @@ def regenerate_question(exam_id: str, question_id: str, db: Session = Depends(ge
     if not exam or current_user["role"] != "teacher" or not exam_service.teacher_can_access_exam(int(current_user["sub"]), exam_id, db):
         raise HTTPException(status_code=403, detail="Not authorized")
         
-    if exam.get("status") == "published":
-        raise HTTPException(status_code=400, detail="Cannot regenerate questions for a published exam")
+    qb = question_bank_service.get_active_question_bank(exam_id)
+    if exam.get("status") in ["published", "ready"] or (qb and qb.get("status") == "approved"):
+        raise HTTPException(status_code=400, detail="Cannot regenerate questions for an approved paper")
         
     new_q = question_generation_service.regenerate_single_question(exam_id, question_id, db)
     if not new_q:
@@ -99,8 +109,9 @@ def delete_question(exam_id: str, question_id: str, db: Session = Depends(get_db
     if not exam or current_user["role"] != "teacher" or not exam_service.teacher_can_access_exam(int(current_user["sub"]), exam_id, db):
         raise HTTPException(status_code=403, detail="Not authorized")
         
-    if exam.get("status") == "published":
-        raise HTTPException(status_code=400, detail="Cannot delete questions for a published exam")
+    qb = question_bank_service.get_active_question_bank(exam_id)
+    if exam.get("status") in ["published", "ready"] or (qb and qb.get("status") == "approved"):
+        raise HTTPException(status_code=400, detail="Cannot delete questions for an approved paper")
         
     success = question_bank_service.delete_question(exam_id, question_id)
     if not success:

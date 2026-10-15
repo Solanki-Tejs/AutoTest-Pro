@@ -63,8 +63,8 @@ def update_exam(exam_id: str, exam_data: ExamUpdate, db: Session = Depends(get_d
     if current_user["role"] != "teacher" or not exam_service.teacher_can_access_exam(int(current_user["sub"]), exam_id, db):
         raise HTTPException(status_code=403, detail="Not authorized to update this exam")
 
-    if exam["status"] == "published":
-        raise HTTPException(status_code=400, detail="Cannot modify a published exam")
+    if exam["status"] in ["published", "ready"]:
+        raise HTTPException(status_code=400, detail="Cannot modify general configuration for an approved or published exam")
         
     if exam_data.selected_pdf_ids is not None:
         available_syllabuses = syllabus_service.get_available_syllabuses_for_exam(int(current_user["sub"]), db)
@@ -139,8 +139,8 @@ def save_exam_blueprint(exam_id: str, blueprint_data: BlueprintCreate, db: Sessi
     if current_user["role"] != "teacher" or not exam_service.teacher_can_access_exam(user_id, exam_id, db):
         raise HTTPException(status_code=403, detail="Not authorized to modify this exam")
 
-    if exam.get("status") == "published":
-        raise HTTPException(status_code=400, detail="Cannot modify blueprint for a published exam")
+    if exam.get("status") in ["published", "ready"]:
+        raise HTTPException(status_code=400, detail="Cannot modify blueprint for an approved or published exam")
         
     # Validate marks
     if not exam_blueprint_service.validate_blueprint_marks(blueprint_data, exam["total_marks"]):

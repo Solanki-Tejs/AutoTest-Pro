@@ -49,34 +49,52 @@ export default function ExamWorkspaceLayout(props: {
         let unlocked = 1; // Syllabus is unlocked once exam exists
         if (ex.selected_pdf_ids && ex.selected_pdf_ids.length > 0) {
           unlocked = 2; // Blueprint unlocked
-
-          const bpRes = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api"}/exams/${params.examId}/blueprint`, {
-            headers: { Authorization: `Bearer ${token}` },
-          });
-          if (bpRes.ok) {
-            unlocked = 3; // Paper unlocked
-
-            const qbRes = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api"}/question-bank/${params.examId}`, {
-              headers: { Authorization: `Bearer ${token}` },
-            });
-            if (qbRes.ok) {
-              unlocked = 4; // Answers unlocked
-
-              const abRes = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api"}/answers/${params.examId}`, {
-                headers: { Authorization: `Bearer ${token}` },
-              });
-              if (abRes.ok) {
-                unlocked = 5; // Publish unlocked
-              }
-            }
-          }
         }
+
+        const [bpRes, qbRes, abRes] = await Promise.all([
+          fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api"}/exams/${params.examId}/blueprint`, {
+            headers: { Authorization: `Bearer ${token}` },
+          }).catch(() => null),
+          fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api"}/exams/${params.examId}/question-bank`, {
+            headers: { Authorization: `Bearer ${token}` },
+          }).catch(() => null),
+          fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api"}/exams/${params.examId}/answers`, {
+            headers: { Authorization: `Bearer ${token}` },
+          }).catch(() => null),
+        ]);
+
+        const hasBlueprint = bpRes?.ok;
+        const hasQuestionBank = qbRes?.ok;
+        const hasAnswers = abRes?.ok;
+
+        if (unlocked >= 2 && hasBlueprint) {
+          unlocked = 3; // Paper unlocked
+        }
+        if (unlocked >= 3 && hasQuestionBank) {
+          unlocked = 4; // Answers unlocked
+        }
+        if (ex.status === "ready" && unlocked < 4) {
+          unlocked = 4; // Paper is approved, Answers must be unlocked
+        }
+        if (unlocked >= 4 && hasAnswers) {
+          unlocked = 5; // Publish unlocked
+        }
+
         setMaxUnlockedStep(unlocked);
       } catch {
         // Fallback: maintain current state
       }
     }
+
     checkProgression();
+
+    const handleExamUpdated = () => {
+      checkProgression();
+    };
+    window.addEventListener("exam-updated", handleExamUpdated);
+    return () => {
+      window.removeEventListener("exam-updated", handleExamUpdated);
+    };
   }, [params.examId, pathname]);
 
   if (!isAuthorized) {

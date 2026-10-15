@@ -9,14 +9,12 @@ export default function EditableQuestionCard({
   question,
   onSave,
   onRegenerate,
-  onDelete,
   isRegenerating = false,
   disabled = false
 }: {
   question: Question;
   onSave: (updates: Partial<Question>) => Promise<void>;
   onRegenerate: () => void;
-  onDelete: () => void;
   isRegenerating?: boolean;
   disabled?: boolean;
 }) {
@@ -186,17 +184,6 @@ export default function EditableQuestionCard({
             className="text-graphite/50 hover:text-teacher transition-colors"
           >
             [ Regenerate ]
-          </button>
-          <button
-            onClick={() => {
-              if (confirm("Delete this question from the paper?")) {
-                onDelete();
-                toast.success("Question deleted");
-              }
-            }}
-            className="text-graphite/50 hover:text-rose-600 transition-colors"
-          >
-            [ Delete ]
           </button>
         </div>
       )}
