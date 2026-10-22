@@ -1,5 +1,6 @@
 import json
 import os
+import time
 import urllib.request
 import urllib.error
 from datetime import datetime, timezone
@@ -152,6 +153,8 @@ def generate_answers_job(exam_id: str, db: Session, mode: str = "all"):
         failed = 0
         
         for idx, q in enumerate(all_questions):
+            if idx > 0:
+                time.sleep(0.4)
             q_id = q.get("question_id")
             
             if mode == "unedited" and q_id in existing_answers:
