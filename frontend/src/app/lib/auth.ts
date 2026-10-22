@@ -1,10 +1,4 @@
-/**
- * AutoTest Pro — Auth API helpers
- * Connects to the FastAPI backend at NEXT_PUBLIC_API_URL (default: http://localhost:8000)
- */
-
-const BASE_URL =
-  process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+import { API_BASE_URL } from "./apiConfig";
 
 export type UserRole = "teacher" | "student" | "admin";
 
@@ -32,7 +26,7 @@ export async function registerUser(
   role: UserRole,
   otp?: string
 ): Promise<RegisterResponse> {
-  const res = await fetch(`${BASE_URL}/api/auth/register`, {
+  const res = await fetch(`${API_BASE_URL}/auth/register`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ name, email, password, role, otp }),
@@ -54,7 +48,7 @@ export async function registerUser(
 // ─── OTP & Password Management ───────────────────────────────────────────────
 
 export async function sendOtp(email: string, purpose: string): Promise<{ status: string; message: string }> {
-  const res = await fetch(`${BASE_URL}/api/auth/send-otp`, {
+  const res = await fetch(`${API_BASE_URL}/auth/send-otp`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ email, purpose }),
@@ -68,7 +62,7 @@ export async function sendOtp(email: string, purpose: string): Promise<{ status:
 }
 
 export async function verifyOtp(email: string, otp: string, purpose: string): Promise<{ status: string; message: string }> {
-  const res = await fetch(`${BASE_URL}/api/auth/verify-otp`, {
+  const res = await fetch(`${API_BASE_URL}/auth/verify-otp`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ email, otp, purpose }),
@@ -82,7 +76,7 @@ export async function verifyOtp(email: string, otp: string, purpose: string): Pr
 }
 
 export async function forgotPassword(email: string, otp: string, new_password: string): Promise<{ status: string; message: string }> {
-  const res = await fetch(`${BASE_URL}/api/auth/forgot-password`, {
+  const res = await fetch(`${API_BASE_URL}/auth/forgot-password`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ email, otp, new_password }),
@@ -99,7 +93,7 @@ export async function updatePassword(
   token: string,
   payload: { current_password?: string; new_password: string; otp?: string; email?: string }
 ): Promise<{ status: string; message: string }> {
-  const res = await fetch(`${BASE_URL}/api/auth/update-password`, {
+  const res = await fetch(`${API_BASE_URL}/auth/update-password`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -124,7 +118,7 @@ export async function loginUser(
   // FastAPI OAuth2PasswordRequestForm requires application/x-www-form-urlencoded
   const body = new URLSearchParams({ username: email, password });
 
-  const res = await fetch(`${BASE_URL}/api/auth/login`, {
+  const res = await fetch(`${API_BASE_URL}/auth/login`, {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: body.toString(),

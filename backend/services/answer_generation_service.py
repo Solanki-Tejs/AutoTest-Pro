@@ -10,11 +10,12 @@ from databases.mongo import get_mongo_db
 from services.exam_service import get_exam_by_id
 from services.question_bank_service import get_active_question_bank
 from services.question_generation_service import get_context_for_exam
+from services.gemini_service import generate_with_gemini
 from services.answer_bank_service import save_answer_bank, set_answer_generation_status, get_active_answer_bank, update_answer_bank
 
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://127.0.0.1:11434").rstrip("/")
 OLLAMA_API_URL = f"{OLLAMA_BASE_URL}/api/generate"
-OLLAMA_GENERATION_MODEL = os.getenv("OLLAMA_GENERATION_MODEL", "mistral:7b").strip()
+OLLAMA_GENERATION_MODEL = os.getenv("OLLAMA_GENERATION_MODEL", os.getenv("OLLAMA_LLM_MODEL", "qwen2.5:7b")).strip()
 
 import re
 
@@ -82,33 +83,8 @@ CRITICAL STRICT REQUIREMENTS FOR MCQ:
 
 
 def generate_single_answer_with_gemini(question: dict, context: str) -> dict | None:
-    gemini_api_key = os.getenv("GEMINI_API_KEY", "").strip()
-    gemini_model = os.getenv("GEMINI_MODEL", "gemini-2.5-flash").strip()
-    if not gemini_api_key:
-        raise ValueError("GEMINI_API_KEY is missing or empty")
-
     prompt, json_schema = _build_prompt_and_schema_for_answer(question, context)
-
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/{gemini_model}:generateContent?key={gemini_api_key}"
-    payload = {
-        "contents": [{"parts": [{"text": prompt}]}],
-        "generationConfig": {
-            "temperature": 0.2,
-            "responseMimeType": "application/json",
-            "responseSchema": json_schema
-        }
-    }
-
-    req = urllib.request.Request(
-        url,
-        data=json.dumps(payload).encode('utf-8'),
-        headers={'Content-Type': 'application/json'},
-        method='POST'
-    )
-    with urllib.request.urlopen(req, timeout=120) as response:
-        result = json.loads(response.read().decode('utf-8'))
-        content = result.get("candidates", [])[0].get("content", {}).get("parts", [])[0].get("text", "{}")
-        return json.loads(content)
+    return generate_with_gemini(prompt, json_schema=json_schema, temperature=0.2)
 
 def generate_single_answer_with_ollama(question: dict, context: str) -> dict | None:
     prompt, json_schema = _build_prompt_and_schema_for_answer(question, context)
@@ -244,7 +220,7 @@ def generate_answers_job(exam_id: str, db: Session, mode: str = "all"):
         }
         
         save_answer_bank(new_ab)
-        set_answer_generation_status(exam_id, "generated", progress=100)
+        set_answer_generation_status(exam_id, "complete", progress=100)
 
         # Notify Teacher
         try:

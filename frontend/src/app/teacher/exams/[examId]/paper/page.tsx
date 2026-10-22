@@ -102,13 +102,14 @@ export default function PaperEditorPage() {
         setProgress(status.progress || 0);
         setCurrentSection(status.current_section || "");
 
-        if (status.status === "complete") {
+        if (status.status === "complete" || status.status === "generated" || (typeof status.progress === "number" && status.progress >= 100)) {
           clearInterval(interval);
           setGenerating(false);
           const pb = await getQuestionBank(t, eId);
           setPaper(pb);
           toast.success("Exam paper generated successfully!");
-        } else if (status.status === "error") {
+          window.dispatchEvent(new CustomEvent("exam-updated"));
+        } else if (status.status === "error" || status.status === "generation_failed" || status.status === "failed") {
           clearInterval(interval);
           setGenerating(false);
           setError(status.error || "Generation failed.");
@@ -297,6 +298,31 @@ export default function PaperEditorPage() {
             <span className="text-[#0047ff] animate-pulse">{currentSection || "Processing..."}</span>
             <span className="text-secondary">{progress}% COMPLETE</span>
           </div>
+
+          {progress >= 100 && (
+            <div className="mt-6 pt-6 border-t border-black/10 flex items-center justify-center gap-3">
+              <button
+                onClick={async () => {
+                  setGenerating(false);
+                  if (token) {
+                    const pb = await getQuestionBank(token, examId).catch(() => null);
+                    if (pb) setPaper(pb);
+                  }
+                  window.dispatchEvent(new CustomEvent("exam-updated"));
+                }}
+                className="px-5 py-2.5 bg-[#0047ff] hover:bg-black text-white font-mono text-xs uppercase tracking-wider font-bold border border-black shadow-[3px_3px_0px_#111111] active:translate-x-[1px] active:translate-y-[1px] active:shadow-none transition-all cursor-pointer"
+              >
+                View Question Paper
+              </button>
+              <button
+                onClick={() => router.push(`/teacher/exams/${examId}/answers`)}
+                className="px-5 py-2.5 bg-black hover:bg-[#0047ff] text-white font-mono text-xs uppercase tracking-wider font-bold border border-black shadow-[3px_3px_0px_#111111] active:translate-x-[1px] active:translate-y-[1px] active:shadow-none transition-all cursor-pointer flex items-center gap-1.5"
+              >
+                <span>Proceed to Answers</span>
+                <span className="material-symbols-outlined text-[14px]">arrow_forward</span>
+              </button>
+            </div>
+          )}
         </div>
       </div>
     );
@@ -363,14 +389,23 @@ export default function PaperEditorPage() {
                 <span className="material-symbols-outlined text-[16px]">arrow_forward</span>
               </button>
             ) : (
-              <button
-                onClick={handleApprove}
-                disabled={isPublished}
-                className="px-6 py-2.5 bg-[#0047ff] hover:bg-black text-white font-mono text-xs uppercase tracking-wider font-bold border border-black shadow-[3px_3px_0px_#111111] active:translate-x-[1px] active:translate-y-[1px] active:shadow-none transition-all cursor-pointer flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                <span>Approve Paper</span>
-                <span className="material-symbols-outlined text-[16px]">arrow_forward</span>
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => router.push(`/teacher/exams/${examId}/answers`)}
+                  className="px-4 py-2.5 bg-surface-container-lowest hover:bg-surface text-on-surface border border-black font-mono text-xs uppercase tracking-wider font-bold shadow-[2px_2px_0px_#111111] active:translate-x-[1px] active:translate-y-[1px] active:shadow-none transition-all cursor-pointer flex items-center gap-1.5"
+                >
+                  <span>Go to Answers</span>
+                  <span className="material-symbols-outlined text-[16px]">arrow_forward</span>
+                </button>
+                <button
+                  onClick={handleApprove}
+                  disabled={isPublished}
+                  className="px-6 py-2.5 bg-[#0047ff] hover:bg-black text-white font-mono text-xs uppercase tracking-wider font-bold border border-black shadow-[3px_3px_0px_#111111] active:translate-x-[1px] active:translate-y-[1px] active:shadow-none transition-all cursor-pointer flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <span>Approve Paper</span>
+                  <span className="material-symbols-outlined text-[16px]">arrow_forward</span>
+                </button>
+              </div>
             )}
           </div>
         )}
@@ -401,6 +436,28 @@ export default function PaperEditorPage() {
         <div className="p-4 bg-[#ffdad6] text-[#93000a] border border-[#ba1a1a] font-mono text-xs flex items-center gap-2 print:hidden">
           <span className="material-symbols-outlined text-[18px]">error</span>
           <span>{error}</span>
+        </div>
+      )}
+
+      {paper && !generating && (
+        <div className="p-3 bg-surface-container-lowest border border-black shadow-[2px_2px_0px_#111111] font-mono text-xs text-on-surface flex items-center justify-between print:hidden">
+          <div className="flex items-center gap-2">
+            <span className="material-symbols-outlined text-[16px] text-[#0047ff]">shuffle</span>
+            <span>
+              <strong>ANTI-CHEAT QUESTION POOL:</strong> {paper.question_body?.sections?.reduce((acc: number, s: any) => acc + (s.questions?.length || 0), 0) || 0} total questions generated. Students receive a randomized subset during live examination.
+            </span>
+          </div>
+        </div>
+      )}
+
+      {paper && !generating && (
+        <div className="p-3 bg-surface-container-lowest border border-black shadow-[2px_2px_0px_#111111] font-mono text-xs text-on-surface flex items-center justify-between print:hidden">
+          <div className="flex items-center gap-2">
+            <span className="material-symbols-outlined text-[16px] text-[#0047ff]">shuffle</span>
+            <span>
+              <strong>ANTI-CHEAT QUESTION POOL:</strong> {paper.question_body?.sections?.reduce((acc: number, s: any) => acc + (s.questions?.length || 0), 0) || 0} total questions generated. Students receive a randomized subset during live examination.
+            </span>
+          </div>
         </div>
       )}
 

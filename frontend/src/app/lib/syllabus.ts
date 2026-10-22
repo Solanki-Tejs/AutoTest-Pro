@@ -1,6 +1,7 @@
 import { getStoredToken } from "./auth";
+import { API_BASE_URL } from "./apiConfig";
 
-const API_BASE = "http://localhost:8000/api";
+const API_BASE = API_BASE_URL;
 
 export interface SyllabusItem {
   id: string;

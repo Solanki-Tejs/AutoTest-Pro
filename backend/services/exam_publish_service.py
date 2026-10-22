@@ -66,20 +66,21 @@ def validate_and_publish_exam(exam_id: str, teacher_id: int, start_time: datetim
     if question_bank.get("status") != "approved":
         raise ValueError("Question bank must be approved before publishing")
         
-    total_q_marks = 0
-    actual_question_counts = {}
-    
     sections = question_bank.get("question_body", {}).get("sections", [])
-    for section in sections:
-        sec_id = section.get("section_id")
-        actual_question_counts[sec_id] = 0
-        for q in section.get("questions", []):
-            mark = q.get("mark", 0)
-            total_q_marks += mark
-            actual_question_counts[sec_id] += 1
-            
-    if total_q_marks != exam["total_marks"]:
-        raise ValueError(f"Question paper total ({total_q_marks}) does not match exam total ({exam['total_marks']})")
+    if len(sections) < len(blueprint.sections):
+        raise ValueError(f"Question paper has {len(sections)} sections, but blueprint requires {len(blueprint.sections)}")
+
+    # Validate each section has sufficient questions to satisfy blueprint count
+    for idx, sec in enumerate(blueprint.sections):
+        sec_paper = sections[idx] if idx < len(sections) else None
+        if not sec_paper:
+            raise ValueError(f"Missing section {sec.section} in question paper")
+        q_count = len(sec_paper.get("questions", []))
+        if q_count < sec.count:
+            raise ValueError(f"Section {sec.section} expects at least {sec.count} questions for randomized anti-cheat sampling, but has {q_count}")
+        for q in sec_paper.get("questions", []):
+            if q.get("mark") != sec.marks_each:
+                raise ValueError(f"Question in section {sec.section} has {q.get('mark')} marks, expected {sec.marks_each}")
 
     # Validate against blueprint
     # for sec in blueprint.sections:

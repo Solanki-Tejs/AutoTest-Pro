@@ -17,9 +17,13 @@ app = FastAPI(
 def on_startup():
     init_mongo()
 
+cors_origins_env = os.getenv("CORS_ORIGINS", "").strip()
+allowed_origins = [orig.strip() for orig in cors_origins_env.split(",") if orig.strip()] if cors_origins_env else []
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=allowed_origins if allowed_origins else [],
+    allow_origin_regex=None if allowed_origins else r"^https?://.*",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

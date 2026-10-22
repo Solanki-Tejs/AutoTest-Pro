@@ -1,5 +1,6 @@
 import json
 import time
+from services.gemini_service import generate_with_gemini
 import os
 import urllib.request
 import urllib.error
@@ -25,7 +26,7 @@ def resolve_ollama_model(preferred: str = None) -> str:
     3. If the model is not installed, fallback to an installed text model (e.g. mistral:7b)
        to prevent HTTP 404 errors.
     """
-    target = (preferred or os.getenv("OLLAMA_LLM_MODEL", "mistral:7b")).strip()
+    target = (preferred or os.getenv("OLLAMA_LLM_MODEL", "qwen2.5:7b")).strip()
     try:
         req = urllib.request.Request(f"{OLLAMA_BASE_URL}/api/tags")
         with urllib.request.urlopen(req, timeout=3) as resp:
@@ -37,7 +38,7 @@ def resolve_ollama_model(preferred: str = None) -> str:
             for m in installed:
                 if m.split(":")[0] == target_base:
                     return m
-            priority = ["mistral:7b", "llama3:latest", "mistral", "llama3", "llava:7b"]
+            priority = ["qwen2.5:7b", "qwen2.5", "mistral:7b", "mistral", "llama3:latest", "llama3", "llava:7b"]
             for cand in priority:
                 for m in installed:
                     if m == cand or m.startswith(cand.split(":")[0]):
@@ -299,68 +300,28 @@ def process_raw_topics(raw_topics, valid_chunk_ids):
     return validated_topics
 
 def extract_topics_with_gemini(all_chunks, valid_chunk_ids, syllabus_id, db):
-    """Google AI Studio (Gemini) API: processes all chunks in a single high-speed cloud call."""
-    gemini_api_key = os.getenv("GEMINI_API_KEY", "").strip()
-    gemini_model = os.getenv("GEMINI_MODEL", "gemini-2.5-flash").strip()
-    if not gemini_api_key:
-        raise ValueError("GEMINI_API_KEY is missing or empty")
-
+    """Google AI Studio (Gemini) API: processes all chunks using rolling key manager."""
     t_start = time.perf_counter()
-    print(f"[TIMING] [Topic Extraction AI (Gemini)] Calling Google AI Studio ({gemini_model}) for {len(all_chunks)} chunks in a single pass...")
-
+    print(f"[TIMING] [Topic Extraction AI (Gemini)] Calling Gemini rolling key manager for {len(all_chunks)} chunks...")
     chunks_text_list = [f"--- Chunk ID: {c[0]} ---\n{c[1]}\n" for c in all_chunks]
     chunks_text = "\n".join(chunks_text_list)
     prompt = PROMPT_TEMPLATE.format(chunks_text=chunks_text)
-
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/{gemini_model}:generateContent?key={gemini_api_key}"
-    
-    # Reasoning models (e.g. gemini-2.5-flash) spend minutes generating thinking tokens by default.
-    # Disabling thinking budget ensures immediate responses in seconds.
-    gen_config = {
-        "response_mime_type": "application/json",
-        "temperature": 0.2,
-        "thinkingConfig": {
-            "thinkingBudget": 0
-        }
-    }
-    payload = {
-        "contents": [
-            {
-                "parts": [{"text": prompt}]
-            }
-        ],
-        "generationConfig": gen_config
-    }
-
-    def _execute_gemini_request(p):
-        req = urllib.request.Request(
-            url,
-            data=json.dumps(p).encode("utf-8"),
-            headers={"Content-Type": "application/json"}
-        )
-        with urllib.request.urlopen(req, timeout=90) as resp:
-            return json.loads(resp.read().decode("utf-8"))
-
-    try:
-        res_data = _execute_gemini_request(payload)
-    except urllib.error.HTTPError as e:
-        err_body = e.read().decode("utf-8", errors="replace")
-        if "thinkingConfig" in err_body:
-            # If the model does not support thinkingConfig, retry without it
-            del payload["generationConfig"]["thinkingConfig"]
-            res_data = _execute_gemini_request(payload)
-        else:
-            raise RuntimeError(f"Gemini API HTTP {e.code} ({e.reason}): {err_body}")
-
-    candidate = res_data["candidates"][0]
-    text_content = candidate["content"]["parts"][0]["text"]
-    parsed = json.loads(text_content)
-    raw_topics = parsed.get("topics", [])
-    if not raw_topics and isinstance(parsed, list):
-        raw_topics = parsed
-
-    duration = time.perf_counter() - t_start
-    print(f"[TIMING] [Topic Extraction AI (Gemini)] Gemini completed in {duration:.2f}s ({len(raw_topics)} raw topics found)")
+    res = generate_with_gemini(prompt, json_schema=JSON_SCHEMA, temperature=0.2)
+    if isinstance(res, str):
+        # Clean code fence if present
+        c = res.strip()
+        if c.startswith("```json"):
+            c = c[7:]
+        if c.startswith("```"):
+            c = c[3:]
+        if c.endswith("```"):
+            c = c[:-3]
+        parsed = json.loads(c.strip())
+    else:
+        parsed = res
+    raw_topics = parsed.get("topics", []) if isinstance(parsed, dict) else (parsed if isinstance(parsed, list) else [])
+    elapsed = time.perf_counter() - t_start
+    print(f"[TIMING] [Topic Extraction AI (Gemini)] Finished in {elapsed:.2f}s, extracted {len(raw_topics)} topics")
     return process_raw_topics(raw_topics, valid_chunk_ids)
 
 def extract_topics_with_ollama(all_chunks, valid_chunk_ids, syllabus_id, db):
@@ -472,18 +433,22 @@ def extract_topics_for_syllabus(syllabus_id: UUID, db: Session):
     rb_duration = time.perf_counter() - rb_t0
     print(f"[TIMING] [Topic Extraction] Rule-based detection took {rb_duration:.3f}s (confidence: {confidence:.2f}, topics found: {len(rule_based_topics)})")
 
-    # 3. Check Confidence and Fallback to AI if needed
-    if confidence >= 0.80:
-        print("[TIMING] [Topic Extraction] Confidence >= 0.80. Using rule-based topics (0 LLM overhead).")
-        validated_topics = rule_based_topics
-    else:
-        print(f"[TIMING] [Topic Extraction] Confidence {confidence:.2f} < 0.80 -> Triggering AI fallback extraction...")
+    # 3. Always run high-accuracy AI topic extraction (Gemini chain / Qwen 2.5)
+    try:
+        print("[TIMING] [Topic Extraction] Running high-quality AI topic extraction...")
         db.execute(
-            text("UPDATE syllabus SET stage = 'AI_TOPIC_FALLBACK' WHERE id = :sid"),
+            text("UPDATE syllabus SET stage = 'AI_TOPIC_EXTRACTION' WHERE id = :sid"),
             {"sid": syllabus_id}
         )
         db.commit()
         validated_topics = extract_topics_with_ai(all_chunks, valid_chunk_ids, syllabus_id, db)
+    except Exception as ai_err:
+        print(f"[Topic Extraction] AI extraction failed ({ai_err}). Using rule-based topics fallback.")
+        validated_topics = rule_based_topics
+
+    if not validated_topics:
+        print("[TIMING] [Topic Extraction] AI returned no topics. Falling back to rule-based detection...")
+        validated_topics = rule_based_topics
 
     # 4. Save to MongoDB
     mongo_t0 = time.perf_counter()

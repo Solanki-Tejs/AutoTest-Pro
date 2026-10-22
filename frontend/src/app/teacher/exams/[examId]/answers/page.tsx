@@ -115,14 +115,14 @@ export default function AnswersPage() {
           failed: status.failed_questions
         });
 
-        if (status.status === "complete") {
+        if (status.status === "complete" || status.status === "generated" || (typeof status.progress === "number" && status.progress >= 100)) {
           clearInterval(interval);
           setGenerating(false);
           const ab = await getAnswerBank(t, eId);
           setAnswerBank(ab);
           toast.success("Answer key generated successfully!");
           window.dispatchEvent(new CustomEvent("exam-updated"));
-        } else if (status.status === "error") {
+        } else if (status.status === "error" || status.status === "failed") {
           clearInterval(interval);
           setGenerating(false);
           setError(status.error || "Generation failed.");
@@ -316,6 +316,24 @@ export default function AnswersPage() {
             </span>
             <span className="text-secondary">{progress}% COMPLETE</span>
           </div>
+
+          {progress >= 100 && (
+            <div className="mt-6 pt-6 border-t border-black/10 flex items-center justify-center">
+              <button
+                onClick={async () => {
+                  setGenerating(false);
+                  if (token) {
+                    const ab = await getAnswerBank(token, examId).catch(() => null);
+                    if (ab) setAnswerBank(ab);
+                  }
+                  window.dispatchEvent(new CustomEvent("exam-updated"));
+                }}
+                className="px-5 py-2.5 bg-[#0047ff] hover:bg-black text-white font-mono text-xs uppercase tracking-wider font-bold border border-black shadow-[3px_3px_0px_#111111] active:translate-x-[1px] active:translate-y-[1px] active:shadow-none transition-all cursor-pointer"
+              >
+                View Generated Answers
+              </button>
+            </div>
+          )}
         </div>
       </div>
     );

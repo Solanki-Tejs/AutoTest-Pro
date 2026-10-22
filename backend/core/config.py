@@ -31,7 +31,7 @@ class Settings:
 
     # OLLAMA CONFIGURATION
     OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434").rstrip("/")
-    OLLAMA_LLM_MODEL = os.getenv("OLLAMA_LLM_MODEL", "mistral:7b").strip()
+    OLLAMA_LLM_MODEL = os.getenv("OLLAMA_LLM_MODEL", "qwen2.5:7b").strip()
     OLLAMA_EMBEDDING_MODEL = os.getenv("OLLAMA_EMBEDDING_MODEL", "nomic-embed-text:latest").strip()
 
 settings = Settings()

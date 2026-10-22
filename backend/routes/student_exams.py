@@ -43,7 +43,7 @@ def get_exam_paper(exam_id: str, db: Session = Depends(get_db), current_user: di
             attempt = student_exam_service.start_exam_attempt(int(current_user["sub"]), exam_id, db)
         
         # Return sanitized question bank
-        return student_exam_service.get_sanitized_question_bank(exam_id)
+        return student_exam_service.get_sanitized_question_bank(exam_id, student_id=int(current_user["sub"]), attempt_id=str(attempt.get("id")))
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -88,7 +88,8 @@ def get_attempt_result(exam_id: str, attempt_id: str, db: Session = Depends(get_
             
         if not attempt.get("result_published_at"):
             raise HTTPException(status_code=403, detail="Results are not published yet")
-            
+
+        attempt["analytics"] = student_exam_service.get_student_result_analytics(int(current_user["sub"]), exam_id, attempt_id, db)
         return attempt
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))

@@ -5,6 +5,7 @@ from typing import Dict, Any, List
 from services.exam_service import get_exam_by_id
 from services.question_bank_service import get_active_question_bank
 import uuid
+import random
 
 _tables_ensured = False
 
@@ -214,37 +215,102 @@ def start_exam_attempt(student_id: int, exam_id: str, db: Session) -> dict:
     })
     new_attempt = res.mappings().one()
     db.commit()
-    
+
+    # Anti-Cheat: Randomly sample questions from the question pool for this student
+    try:
+        from databases.mongo import get_mongo_db
+        from services.exam_blueprint_service import get_blueprint
+        mongo_db = get_mongo_db()
+        qb = get_active_question_bank(exam_id)
+        blueprint = get_blueprint(exam_id)
+        assigned_qids = []
+
+        if qb:
+            sections = qb.get("question_body", {}).get("sections", [])
+            for idx, sec in enumerate(sections):
+                sec_questions = sec.get("questions", [])
+                # Determine required count from blueprint or section metadata
+                bp_count = None
+                if blueprint and idx < len(blueprint.sections):
+                    bp_count = blueprint.sections[idx].count
+                req_count = bp_count or sec.get("required_count") or len(sec_questions)
+
+                if len(sec_questions) > req_count:
+                    chosen = random.sample(sec_questions, req_count)
+                else:
+                    chosen = list(sec_questions)
+                for q in chosen:
+                    if q.get("question_id"):
+                        assigned_qids.append(q["question_id"])
+
+            mongo_db.exam_attempt_papers.update_one(
+                {"attempt_id": str(new_attempt["id"])},
+                {"$set": {
+                    "attempt_id": str(new_attempt["id"]),
+                    "exam_id": exam_id,
+                    "student_id": student_id,
+                    "assigned_question_ids": assigned_qids,
+                    "created_at": now.isoformat()
+                }},
+                upsert=True
+            )
+    except Exception as pool_err:
+        print(f"[AntiCheat] Error sampling question pool: {pool_err}")
+
     return dict(new_attempt)
 
 
-def get_sanitized_question_bank(exam_id: str) -> Dict[str, Any]:
+def get_sanitized_question_bank(exam_id: str, student_id: int = None, attempt_id: str = None) -> Dict[str, Any]:
     qb = get_active_question_bank(exam_id)
     if not qb:
         raise ValueError("Question bank not found")
-        
+
+    # Check if student has assigned questions from randomized pool
+    assigned_qids = None
+    if attempt_id or student_id:
+        try:
+            from databases.mongo import get_mongo_db
+            mongo_db = get_mongo_db()
+            query_filter = {}
+            if attempt_id:
+                query_filter["attempt_id"] = str(attempt_id)
+            elif student_id:
+                query_filter["student_id"] = student_id
+                query_filter["exam_id"] = exam_id
+            paper_doc = mongo_db.exam_attempt_papers.find_one(query_filter)
+            if paper_doc and "assigned_question_ids" in paper_doc:
+                assigned_qids = set(paper_doc["assigned_question_ids"])
+        except Exception:
+            pass
+
     sanitized_sections = []
-    
+    q_counter = 0
+
     for section in qb.get("question_body", {}).get("sections", []):
         sanitized_questions = []
         for q in section.get("questions", []):
+            # If student has assigned questions, only include those
+            if assigned_qids is not None and q.get("question_id") not in assigned_qids:
+                continue
+
             sanitized_q = {
                 "question_id": q.get("question_id"),
                 "question_text": q.get("question_text"),
                 "type": q.get("type"),
                 "mark": q.get("mark"),
-                "order": q.get("order"),
+                "order": q_counter,
             }
+            q_counter += 1
             if "options" in q:
                 sanitized_q["options"] = q["options"]
             sanitized_questions.append(sanitized_q)
-            
+
         sanitized_sections.append({
             "sectionNo": section.get("sectionNo"),
             "sectionName": section.get("sectionName"),
             "questions": sanitized_questions
         })
-        
+
     return {
         "exam_id": qb["exam_id"],
         "version": qb["version"],
@@ -347,3 +413,124 @@ def submit_exam_attempt(student_id: int, exam_id: str, answers: List[Dict[str, A
     
     return dict(completed_attempt)
 
+
+
+def get_student_result_analytics(student_id: int, exam_id: str, attempt_id: str, db: Session) -> dict:
+    """Calculates comprehensive candidate result statistics and cohort standing."""
+    ensure_tables(db)
+
+    # 1. Cohort Performance Stats
+    cohort_query = text("""
+        SELECT student_id, (COALESCE(total_marks, 0) + COALESCE(adjustment_marks, 0)) as score, max_marks
+        FROM exam_attempts
+        WHERE exam_id = :exam_id AND status = 'evaluated' AND completed_at IS NOT NULL
+        ORDER BY score DESC
+    """)
+    cohort_rows = db.execute(cohort_query, {"exam_id": exam_id}).mappings().all()
+    total_candidates = len(cohort_rows)
+    scores = [float(r["score"]) for r in cohort_rows]
+
+    class_avg = round(sum(scores) / max(total_candidates, 1), 1) if scores else 0.0
+    highest_score = max(scores) if scores else 0.0
+    lowest_score = min(scores) if scores else 0.0
+
+    # Find rank & percentile
+    rank = 1
+    for idx, r in enumerate(cohort_rows):
+        if r["student_id"] == student_id:
+            rank = idx + 1
+            break
+
+    percentile = round(((total_candidates - rank) / max(total_candidates, 1)) * 100, 1) if total_candidates > 0 else 100.0
+
+    # 2. Proctoring & Acoustic Telemetry
+    from databases.mongo import get_mongo_db
+    mongo_db = get_mongo_db()
+    proctoring_doc = mongo_db.proctoring_events.find_one({"attempt_id": str(attempt_id)})
+    events = proctoring_doc.get("events", []) if proctoring_doc else []
+
+    audio_violations = sum(1 for e in events if e.get("eventType") in ("AUDIO_VIOLATION", "VOICE_DETECTED"))
+    face_violations = sum(1 for e in events if e.get("eventType") in ("FACE_NOT_DETECTED", "MULTIPLE_FACES", "HEAD_MOVEMENT"))
+    browser_violations = sum(1 for e in events if e.get("eventType") in ("TAB_SWITCH", "WINDOW_BLUR", "FULLSCREEN_EXIT"))
+    total_violations = len(events)
+
+    integrity_rating = "HIGH COMPLIANCE" if total_violations == 0 else ("MINOR REVIEW" if total_violations <= 2 else "FLAGGED INCIDENTS")
+
+    # 3. Cognitive & Taxonomy Breakdown
+    qb = get_active_question_bank(exam_id)
+    answers_doc = mongo_db.exam_attempt_answers.find_one({"attempt_id": str(attempt_id)})
+    saved_answers = answers_doc.get("answers", []) if answers_doc else []
+    answers_map = {ans.get("question_id"): ans for ans in saved_answers}
+
+    taxonomy_stats = {}
+    type_stats = {}
+
+    if qb:
+        for sec in qb.get("question_body", {}).get("sections", []):
+            for q in sec.get("questions", []):
+                qid = q.get("question_id")
+                if qid not in answers_map:
+                    continue
+                ans = answers_map[qid]
+                eval_data = ans.get("evaluation", {})
+                assigned = float(eval_data.get("teacher_override_marks") if eval_data.get("modified_by_teacher") else eval_data.get("ai_assigned_marks", 0))
+                q_mark = float(q.get("mark", 1))
+                bloom = q.get("bloom_level") or "Understand"
+                q_type = q.get("type") or "mcq"
+
+                # Bloom taxonomy accumulator
+                if bloom not in taxonomy_stats:
+                    taxonomy_stats[bloom] = {"total_marks": 0.0, "earned_marks": 0.0, "question_count": 0}
+                taxonomy_stats[bloom]["total_marks"] += q_mark
+                taxonomy_stats[bloom]["earned_marks"] += assigned
+                taxonomy_stats[bloom]["question_count"] += 1
+
+                # Type accumulator
+                if q_type not in type_stats:
+                    type_stats[q_type] = {"total_marks": 0.0, "earned_marks": 0.0, "question_count": 0}
+                type_stats[q_type]["total_marks"] += q_mark
+                type_stats[q_type]["earned_marks"] += assigned
+                type_stats[q_type]["question_count"] += 1
+
+    # Format taxonomy items
+    bloom_breakdown = []
+    for level, data in taxonomy_stats.items():
+        pct = round((data["earned_marks"] / max(data["total_marks"], 1)) * 100)
+        bloom_breakdown.append({
+            "level": level,
+            "earned": round(data["earned_marks"], 1),
+            "total": round(data["total_marks"], 1),
+            "count": data["question_count"],
+            "percentage": pct
+        })
+
+    type_breakdown = []
+    for tname, data in type_stats.items():
+        pct = round((data["earned_marks"] / max(data["total_marks"], 1)) * 100)
+        type_breakdown.append({
+            "type": tname,
+            "earned": round(data["earned_marks"], 1),
+            "total": round(data["total_marks"], 1),
+            "count": data["question_count"],
+            "percentage": pct
+        })
+
+    return {
+        "cohort": {
+            "total_candidates": total_candidates,
+            "rank": rank,
+            "percentile": percentile,
+            "class_average": class_avg,
+            "highest_score": highest_score,
+            "lowest_score": lowest_score,
+        },
+        "proctoring": {
+            "total_violations": total_violations,
+            "audio_violations": audio_violations,
+            "face_violations": face_violations,
+            "browser_violations": browser_violations,
+            "integrity_rating": integrity_rating,
+        },
+        "taxonomy": bloom_breakdown,
+        "question_types": type_breakdown,
+    }

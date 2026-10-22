@@ -4,6 +4,7 @@ import urllib.error
 from datetime import datetime, timezone
 import os
 from pydantic import BaseModel
+from services.gemini_service import generate_with_gemini
 
 
 
@@ -11,7 +12,7 @@ OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://127.0.0.1:11434").rstrip(
 OLLAMA_API_URL = f"{OLLAMA_BASE_URL}/api/generate"
 
 def resolve_ollama_model(preferred: str = None) -> str:
-    target = (preferred or os.getenv("OLLAMA_LLM_MODEL", "mistral:7b")).strip()
+    target = (preferred or os.getenv("OLLAMA_LLM_MODEL", "qwen2.5:7b")).strip()
     try:
         req = urllib.request.Request(f"{OLLAMA_BASE_URL}/api/tags")
         with urllib.request.urlopen(req, timeout=3) as resp:
@@ -23,7 +24,7 @@ def resolve_ollama_model(preferred: str = None) -> str:
             for m in installed:
                 if m.split(":")[0] == target_base:
                     return m
-            priority = ["mistral:7b", "llama3:latest", "mistral", "llama3", "llava:7b"]
+            priority = ["qwen2.5:7b", "qwen2.5", "mistral:7b", "mistral", "llama3:latest", "llama3", "llava:7b"]
             for cand in priority:
                 for m in installed:
                     if m == cand or m.startswith(cand.split(":")[0]):
@@ -118,60 +119,25 @@ def evaluate_subjective(student_answer: dict, official_answer: dict, question_me
     """
     
     if provider == "gemini":
-        if api_key:
-            try:
-                gemini_model = os.getenv("GEMINI_MODEL", "gemini-2.5-pro").strip()
-                url = f"https://generativelanguage.googleapis.com/v1beta/models/{gemini_model}:generateContent?key={api_key}"
-                
-                schema = SubjectiveEvaluation.model_json_schema()
-                schema.pop('title', None)
-                for prop in schema.get('properties', {}).values():
-                    prop.pop('title', None)
-                
-                payload = {
-                    "contents": [{"parts": [{"text": prompt}]}],
-                    "generationConfig": {
-                        "temperature": 0.1,
-                        "responseMimeType": "application/json",
-                        "responseSchema": schema
-                    }
-                }
-                
-                req = urllib.request.Request(
-                    url,
-                    data=json.dumps(payload).encode('utf-8'),
-                    headers={'Content-Type': 'application/json'},
-                    method='POST'
-                )
-                
-                with urllib.request.urlopen(req, timeout=60) as response:
-                    result_json = json.loads(response.read().decode('utf-8'))
-                    content = result_json.get("candidates", [])[0].get("content", {}).get("parts", [])[0].get("text", "{}")
-                    result = json.loads(content)
-                
-                # Validation
-                awarded = float(result.get("awarded_marks", 0))
-                if awarded > max_marks:
-                    awarded = max_marks
-                if awarded < 0:
-                    awarded = 0
-                    
-                return {
-                    "status": "completed" if not result.get("needs_review") else "needs_review",
-                    "evaluator_model": "gemini-2.5-pro",
-                    "ai_assigned_marks": awarded,
-                    "ai_feedback": result.get("feedback", ""),
-                    "ai_justification": result.get("justification", ""),
-                    "ai_confidence_level": float(result.get("confidence", 1.0)),
-                    "evaluated_at": datetime.now(timezone.utc).isoformat()
-                }
-            except Exception as e:
-                print(f"Warning: Gemini API evaluation failed ({e}). Falling back to local Ollama...")
-                return evaluate_with_ollama(prompt, max_marks)
-        else:
-            print("Warning: GEMINI_API_KEY is not set. Falling back to local Ollama...")
+        try:
+            result = generate_with_gemini(prompt, json_schema=schema, temperature=0.1)
+            awarded = float(result.get("awarded_marks", 0))
+            if awarded > max_marks:
+                awarded = max_marks
+            if awarded < 0:
+                awarded = 0
+            return {
+                "status": "completed" if not result.get("needs_review") else "needs_review",
+                "evaluator_model": "gemini-rolling",
+                "ai_assigned_marks": awarded,
+                "ai_feedback": result.get("feedback", ""),
+                "ai_justification": result.get("justification", ""),
+                "ai_confidence_level": float(result.get("confidence", 1.0)),
+                "evaluated_at": datetime.now(timezone.utc).isoformat()
+            }
+        except Exception as e:
+            print(f"Warning: Gemini rolling evaluation failed ({e}). Falling back to local Ollama...")
             return evaluate_with_ollama(prompt, max_marks)
-            
     elif provider == "mock":
         # Mock evaluation for fallback
         return {

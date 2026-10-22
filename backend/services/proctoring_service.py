@@ -13,7 +13,10 @@ from mediapipe.tasks import python
 from mediapipe.tasks.python import vision
 
 # Initialize MediaPipe Face Landmarker
-base_options = python.BaseOptions(model_asset_path='models/face_landmarker.task')
+MODEL_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), "models", "face_landmarker.task")
+if not os.path.exists(MODEL_PATH):
+    MODEL_PATH = "models/face_landmarker.task"
+base_options = python.BaseOptions(model_asset_path=MODEL_PATH)
 options = vision.FaceLandmarkerOptions(
     base_options=base_options,
     num_faces=10
@@ -169,7 +172,7 @@ def log_browser_violation(student_id: int, exam_id: str, attempt_id: str, event_
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "details": {
             "description": description,
-            "duration_seconds": 0,
+            "duration_seconds": (metadata.get("duration_seconds", 0) if isinstance(metadata, dict) else 0),
             "snapshot_url": None,
             "metadata": metadata or {}
         }

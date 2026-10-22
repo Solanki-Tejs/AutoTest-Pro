@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { getStoredToken } from "@/app/lib/auth";
 import Modal from "@/app/components/Modal";
 import { toast } from "sonner";
+import { API_BASE_URL } from "@/app/lib/apiConfig";
 
 interface StackedAlert {
   key: string;
@@ -96,7 +97,7 @@ export default function ExamResultsPage(props: { params: Promise<{ examId: strin
   // Filters
   const [filterSearch, setFilterSearch] = useState("");
   const [filterStatus, setFilterStatus] = useState<"all" | "evaluated" | "pending" | "manual">("all");
-  const [filterAnomaly, setFilterAnomaly] = useState<"all" | "flagged" | "clean">("all");
+  const [filterAnomaly, setFilterAnomaly] = useState<"all" | "flagged" | "clean" | "audio">("all");
 
   // CSV Modal
   const [showDownloadModal, setShowDownloadModal] = useState(false);
@@ -123,10 +124,10 @@ export default function ExamResultsPage(props: { params: Promise<{ examId: strin
     setLoading(true);
     try {
       const [attemptsRes, examRes] = await Promise.all([
-        fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api"}/teacher/exams/${params.examId}/attempts`, {
+        fetch(`${API_BASE_URL}/teacher/exams/${params.examId}/attempts`, {
           headers: { Authorization: `Bearer ${token}` },
         }),
-        fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api"}/exams/${params.examId}`, {
+        fetch(`${API_BASE_URL}/exams/${params.examId}`, {
           headers: { Authorization: `Bearer ${token}` },
         }),
       ]);
@@ -154,7 +155,7 @@ export default function ExamResultsPage(props: { params: Promise<{ examId: strin
     if (!confirm("PUBLISH VERIFIED RESULTS: This will finalize scores and notify candidates with authoritative transcripts. Proceed?")) return;
     try {
       const token = getStoredToken();
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api"}/teacher/exams/${params.examId}/results/publish`, {
+      const res = await fetch(`${API_BASE_URL}/teacher/exams/${params.examId}/results/publish`, {
         method: "POST",
         headers: { Authorization: `Bearer ${token}` },
       });
@@ -174,7 +175,7 @@ export default function ExamResultsPage(props: { params: Promise<{ examId: strin
     setUpdatingAdj(attemptId);
     try {
       const token = getStoredToken();
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api"}/teacher/attempts/${attemptId}/global_marks`, {
+      const res = await fetch(`${API_BASE_URL}/teacher/attempts/${attemptId}/global_marks`, {
         method: "PATCH",
         headers: {
           Authorization: `Bearer ${token}`,
@@ -295,6 +296,18 @@ export default function ExamResultsPage(props: { params: Promise<{ examId: strin
     const alerts = a.cheating_summary?.events?.length || 0;
     if (filterAnomaly === "flagged" && alerts === 0) return false;
     if (filterAnomaly === "clean" && alerts > 0) return false;
+    if (filterAnomaly === "audio") {
+      const hasAudio = (a.cheating_summary?.events || []).some(
+        (e: any) => e.eventType === "AUDIO_VIOLATION" || e.eventType === "VOICE_DETECTED"
+      );
+      if (!hasAudio) return false;
+    }
+    if (filterAnomaly === "audio") {
+      const hasAudio = (a.cheating_summary?.events || []).some(
+        (e: any) => e.eventType === "AUDIO_VIOLATION" || e.eventType === "VOICE_DETECTED"
+      );
+      if (!hasAudio) return false;
+    }
 
     return true;
   });
@@ -639,7 +652,21 @@ export default function ExamResultsPage(props: { params: Promise<{ examId: strin
 
                         {/* Cheating Alerts */}
                         <td className="py-4 px-4 align-middle">
-                          <div className="flex items-center gap-2">
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            {(() => {
+                              const audioCount = (a.cheating_summary?.events || []).filter(
+                                (e: any) => e.eventType === "AUDIO_VIOLATION" || e.eventType === "VOICE_DETECTED"
+                              ).length;
+                              if (audioCount > 0) {
+                                return (
+                                  <span className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-amber-100 text-amber-900 border border-amber-400 font-mono text-[9px] font-bold" title={`${audioCount} audio threshold violations`}>
+                                    <span className="material-symbols-outlined text-[12px]">mic</span>
+                                    <span>{audioCount} AUDIO</span>
+                                  </span>
+                                );
+                              }
+                              return null;
+                            })()}
                             {violationCount > 0 ? (
                               <button
                                 onClick={() =>

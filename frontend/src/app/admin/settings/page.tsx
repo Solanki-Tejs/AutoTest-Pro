@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { getStoredUser, getStoredToken } from "@/app/lib/auth";
+import { API_BASE_URL } from "@/app/lib/apiConfig";
 import Link from "next/link";
 
 export default function AdminSettingsPage() {
@@ -35,7 +36,7 @@ export default function AdminSettingsPage() {
 
     const loadSettings = async () => {
       try {
-        const res = await fetch("http://localhost:8000/api/settings", {
+        const res = await fetch(`${API_BASE_URL}/settings`, {
           headers: { "Authorization": `Bearer ${token}` }
         });
         if (res.ok) {
@@ -57,7 +58,7 @@ export default function AdminSettingsPage() {
     if (!token) return;
     setSaving(true);
     try {
-      const res = await fetch("http://localhost:8000/api/settings", {
+      const res = await fetch(`${API_BASE_URL}/settings`, {
         method: "PUT",
         headers: {
           "Content-Type": "application/json",

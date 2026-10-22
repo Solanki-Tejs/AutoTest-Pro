@@ -191,6 +191,13 @@ export default function ExamResultPage() {
   const percentage = maxMarks > 0 ? Math.round((totalScore / maxMarks) * 100) : 0;
   const correctRatio = totalQuestions > 0 ? Math.round((correctCount / totalQuestions) * 100) : 0;
 
+  // Candidate Result Analytics
+  const analytics = result.analytics || {};
+  const cohort = analytics.cohort || {};
+  const proctoring = analytics.proctoring || {};
+  const taxonomy = analytics.taxonomy || [];
+  const questionTypes = analytics.question_types || [];
+
   // Watermark short acronym
   const shortCode =
     exam.title
@@ -561,6 +568,168 @@ export default function ExamResultPage() {
                       Scroll To Qs ↓
                     </a>
                   </div>
+                </div>
+              </div>
+            </div>
+
+            {/* ── Candidate Performance Statistics & Cohort Benchmarks Strip ── */}
+            <div className="w-full bg-surface-container-lowest p-6 shadow-sm border border-outline-variant mb-8">
+              <div className="flex items-center justify-between pb-4 mb-4 border-b border-outline-variant">
+                <div className="flex items-center gap-2">
+                  <span className="material-symbols-outlined text-primary text-[20px]">analytics</span>
+                  <h2 className="font-label-caps-lg uppercase tracking-widest text-on-surface font-bold text-sm">
+                    Candidate Result Statistics &amp; Cohort Standing
+                  </h2>
+                </div>
+                <span className="font-mono text-xs text-secondary font-bold uppercase tracking-wider">
+                  OFFICIAL INSTITUTIONAL LEDGER
+                </span>
+              </div>
+
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <div className="bg-surface-container-low p-4 border border-outline-variant">
+                  <span className="font-label-caps-sm text-secondary uppercase block text-[10px] tracking-wider mb-1">
+                    Class Rank
+                  </span>
+                  <div className="flex items-baseline gap-1">
+                    <span className="font-serif text-3xl font-bold text-primary">
+                      #{cohort.rank || 1}
+                    </span>
+                    <span className="font-mono text-xs text-secondary font-semibold">
+                      / {cohort.total_candidates || 1}
+                    </span>
+                  </div>
+                  <span className="font-mono text-[10px] text-secondary mt-1 block">
+                    {cohort.percentile || 100}% Standing
+                  </span>
+                </div>
+
+                <div className="bg-surface-container-low p-4 border border-outline-variant">
+                  <span className="font-label-caps-sm text-secondary uppercase block text-[10px] tracking-wider mb-1">
+                    Class Average
+                  </span>
+                  <div className="flex items-baseline gap-1">
+                    <span className="font-serif text-3xl font-bold text-on-surface">
+                      {cohort.class_average !== undefined ? cohort.class_average : totalScore}
+                    </span>
+                    <span className="font-mono text-xs text-secondary font-semibold">
+                      / {maxMarks}
+                    </span>
+                  </div>
+                  <span className="font-mono text-[10px] text-primary font-bold mt-1 block">
+                    {totalScore - (cohort.class_average || totalScore) >= 0 ? "+" : ""}
+                    {(totalScore - (cohort.class_average || totalScore)).toFixed(1)} vs Cohort
+                  </span>
+                </div>
+
+                <div className="bg-surface-container-low p-4 border border-outline-variant">
+                  <span className="font-label-caps-sm text-secondary uppercase block text-[10px] tracking-wider mb-1">
+                    Cohort Highest
+                  </span>
+                  <div className="flex items-baseline gap-1">
+                    <span className="font-serif text-3xl font-bold text-green-700">
+                      {cohort.highest_score !== undefined ? cohort.highest_score : totalScore}
+                    </span>
+                    <span className="font-mono text-xs text-secondary font-semibold">
+                      / {maxMarks}
+                    </span>
+                  </div>
+                  <span className="font-mono text-[10px] text-secondary mt-1 block">
+                    Target Benchmark
+                  </span>
+                </div>
+
+                <div className="bg-surface-container-low p-4 border border-outline-variant">
+                  <span className="font-label-caps-sm text-secondary uppercase block text-[10px] tracking-wider mb-1">
+                    Integrity Rating
+                  </span>
+                  <span className="font-label-caps-sm text-xs font-bold text-green-700 block my-1">
+                    {proctoring.integrity_rating || "HIGH COMPLIANCE"}
+                  </span>
+                  <span className="font-mono text-[10px] text-secondary block">
+                    {proctoring.total_violations || 0} Total Alerts
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {/* ── Candidate Performance Statistics & Cohort Benchmarks Strip ── */}
+            <div className="w-full bg-surface-container-lowest p-6 shadow-sm border border-outline-variant mb-8">
+              <div className="flex items-center justify-between pb-4 mb-4 border-b border-outline-variant">
+                <div className="flex items-center gap-2">
+                  <span className="material-symbols-outlined text-primary text-[20px]">analytics</span>
+                  <h2 className="font-label-caps-lg uppercase tracking-widest text-on-surface font-bold text-sm">
+                    Candidate Result Statistics &amp; Cohort Standing
+                  </h2>
+                </div>
+                <span className="font-mono text-xs text-secondary font-bold uppercase tracking-wider">
+                  OFFICIAL INSTITUTIONAL LEDGER
+                </span>
+              </div>
+
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <div className="bg-surface-container-low p-4 border border-outline-variant">
+                  <span className="font-label-caps-sm text-secondary uppercase block text-[10px] tracking-wider mb-1">
+                    Class Rank
+                  </span>
+                  <div className="flex items-baseline gap-1">
+                    <span className="font-serif text-3xl font-bold text-primary">
+                      #{cohort.rank || 1}
+                    </span>
+                    <span className="font-mono text-xs text-secondary font-semibold">
+                      / {cohort.total_candidates || 1}
+                    </span>
+                  </div>
+                  <span className="font-mono text-[10px] text-secondary mt-1 block">
+                    {cohort.percentile || 100}% Standing
+                  </span>
+                </div>
+
+                <div className="bg-surface-container-low p-4 border border-outline-variant">
+                  <span className="font-label-caps-sm text-secondary uppercase block text-[10px] tracking-wider mb-1">
+                    Class Average
+                  </span>
+                  <div className="flex items-baseline gap-1">
+                    <span className="font-serif text-3xl font-bold text-on-surface">
+                      {cohort.class_average !== undefined ? cohort.class_average : totalScore}
+                    </span>
+                    <span className="font-mono text-xs text-secondary font-semibold">
+                      / {maxMarks}
+                    </span>
+                  </div>
+                  <span className="font-mono text-[10px] text-primary font-bold mt-1 block">
+                    {totalScore - (cohort.class_average || totalScore) >= 0 ? "+" : ""}
+                    {(totalScore - (cohort.class_average || totalScore)).toFixed(1)} vs Cohort
+                  </span>
+                </div>
+
+                <div className="bg-surface-container-low p-4 border border-outline-variant">
+                  <span className="font-label-caps-sm text-secondary uppercase block text-[10px] tracking-wider mb-1">
+                    Cohort Highest
+                  </span>
+                  <div className="flex items-baseline gap-1">
+                    <span className="font-serif text-3xl font-bold text-green-700">
+                      {cohort.highest_score !== undefined ? cohort.highest_score : totalScore}
+                    </span>
+                    <span className="font-mono text-xs text-secondary font-semibold">
+                      / {maxMarks}
+                    </span>
+                  </div>
+                  <span className="font-mono text-[10px] text-secondary mt-1 block">
+                    Target Benchmark
+                  </span>
+                </div>
+
+                <div className="bg-surface-container-low p-4 border border-outline-variant">
+                  <span className="font-label-caps-sm text-secondary uppercase block text-[10px] tracking-wider mb-1">
+                    Integrity Rating
+                  </span>
+                  <span className="font-label-caps-sm text-xs font-bold text-green-700 block my-1">
+                    {proctoring.integrity_rating || "HIGH COMPLIANCE"}
+                  </span>
+                  <span className="font-mono text-[10px] text-secondary block">
+                    {proctoring.total_violations || 0} Total Alerts
+                  </span>
                 </div>
               </div>
             </div>

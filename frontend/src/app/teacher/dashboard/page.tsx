@@ -22,6 +22,7 @@ import Modal from "@/app/components/Modal";
 import Badge from "@/app/components/Badge";
 import UpdatePasswordCard from "@/app/components/UpdatePasswordCard";
 import NotificationBell from "@/app/components/NotificationBell";
+import { API_BASE_URL } from "@/app/lib/apiConfig";
 import { toast } from "sonner";
 import { useRouter } from "next/navigation";
 
@@ -125,7 +126,7 @@ export default function TeacherDashboard() {
       const results = await Promise.all(
         published.map(async (exam) => {
           try {
-            const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api"}/teacher/exams/${exam.id}/attempts`, {
+            const res = await fetch(`${API_BASE_URL}/teacher/exams/${exam.id}/attempts`, {
               headers: { Authorization: `Bearer ${authToken}` }
             });
             if (!res.ok) return [];

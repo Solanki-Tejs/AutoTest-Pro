@@ -1,8 +1,4 @@
-/**
- * AutoTest Pro — Class Management API helpers
- */
-
-const BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+import { API_BASE_URL } from "./apiConfig";
 
 function authHeaders(token: string) {
   return {
@@ -68,7 +64,7 @@ export async function createClass(
   name: string,
   description: string
 ): Promise<ClassItem> {
-  const res = await fetch(`${BASE_URL}/api/classes/`, {
+  const res = await fetch(`${API_BASE_URL}/classes/`, {
     method: "POST",
     headers: authHeaders(token),
     body: JSON.stringify({ name, description }),
@@ -78,7 +74,7 @@ export async function createClass(
 }
 
 export async function fetchMyClasses(token: string): Promise<ClassItem[]> {
-  const res = await fetch(`${BASE_URL}/api/classes/my`, {
+  const res = await fetch(`${API_BASE_URL}/classes/my`, {
     headers: authHeaders(token),
   });
   if (!res.ok) throw new Error("Failed to fetch classes");
@@ -86,7 +82,7 @@ export async function fetchMyClasses(token: string): Promise<ClassItem[]> {
 }
 
 export async function fetchAllRequests(token: string): Promise<JoinRequest[]> {
-  const res = await fetch(`${BASE_URL}/api/classes/requests`, {
+  const res = await fetch(`${API_BASE_URL}/classes/requests`, {
     headers: authHeaders(token),
   });
   if (!res.ok) throw new Error("Failed to fetch requests");
@@ -94,7 +90,7 @@ export async function fetchAllRequests(token: string): Promise<JoinRequest[]> {
 }
 
 export async function approveRequest(token: string, requestId: number): Promise<void> {
-  const res = await fetch(`${BASE_URL}/api/classes/requests/${requestId}/approve`, {
+  const res = await fetch(`${API_BASE_URL}/classes/requests/${requestId}/approve`, {
     method: "POST",
     headers: authHeaders(token),
   });
@@ -102,7 +98,7 @@ export async function approveRequest(token: string, requestId: number): Promise<
 }
 
 export async function rejectRequest(token: string, requestId: number): Promise<void> {
-  const res = await fetch(`${BASE_URL}/api/classes/requests/${requestId}/reject`, {
+  const res = await fetch(`${API_BASE_URL}/classes/requests/${requestId}/reject`, {
     method: "POST",
     headers: authHeaders(token),
   });
@@ -110,7 +106,7 @@ export async function rejectRequest(token: string, requestId: number): Promise<v
 }
 
 export async function deleteClass(token: string, classId: number): Promise<void> {
-  const res = await fetch(`${BASE_URL}/api/classes/${classId}`, {
+  const res = await fetch(`${API_BASE_URL}/classes/${classId}`, {
     method: "DELETE",
     headers: authHeaders(token),
   });
@@ -121,7 +117,7 @@ export async function fetchClassStudents(
   token: string,
   classId: number
 ): Promise<EnrolledStudent[]> {
-  const res = await fetch(`${BASE_URL}/api/classes/${classId}/students`, {
+  const res = await fetch(`${API_BASE_URL}/classes/${classId}/students`, {
     headers: authHeaders(token),
   });
   if (!res.ok) throw new Error("Failed to fetch students");
@@ -133,7 +129,7 @@ export async function removeStudentFromClass(
   classId: number,
   studentId: number
 ): Promise<void> {
-  const res = await fetch(`${BASE_URL}/api/classes/${classId}/students/${studentId}`, {
+  const res = await fetch(`${API_BASE_URL}/classes/${classId}/students/${studentId}`, {
     method: "DELETE",
     headers: authHeaders(token),
   });
@@ -146,7 +142,7 @@ export async function previewClassByCode(
   token: string,
   code: string
 ): Promise<ClassPreview> {
-  const res = await fetch(`${BASE_URL}/api/classes/preview/${code.trim().toUpperCase()}`, {
+  const res = await fetch(`${API_BASE_URL}/classes/preview/${code.trim().toUpperCase()}`, {
     headers: authHeaders(token),
   });
   if (res.status === 404) throw new Error("Invalid class code. Please check and try again.");
@@ -155,7 +151,7 @@ export async function previewClassByCode(
 }
 
 export async function requestToJoinByCode(token: string, code: string): Promise<void> {
-  const res = await fetch(`${BASE_URL}/api/classes/join/${code.trim().toUpperCase()}`, {
+  const res = await fetch(`${API_BASE_URL}/classes/join/${code.trim().toUpperCase()}`, {
     method: "POST",
     headers: authHeaders(token),
   });
@@ -168,7 +164,7 @@ export async function requestToJoinByCode(token: string, code: string): Promise<
 }
 
 export async function fetchMyMemberships(token: string): Promise<Membership[]> {
-  const res = await fetch(`${BASE_URL}/api/classes/my-memberships`, {
+  const res = await fetch(`${API_BASE_URL}/classes/my-memberships`, {
     headers: authHeaders(token),
   });
   if (!res.ok) throw new Error("Failed to fetch memberships");

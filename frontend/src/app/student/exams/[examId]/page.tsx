@@ -22,6 +22,7 @@ export default function ExamInstructionsPage() {
   const [stream, setStream] = useState<MediaStream | null>(null);
   const [cameraError, setCameraError] = useState("");
   const [cameraReady, setCameraReady] = useState(false);
+  const [micReady, setMicReady] = useState(false);
 
   useEffect(() => {
     const t = getStoredToken();
@@ -76,15 +77,18 @@ export default function ExamInstructionsPage() {
   const requestCamera = async () => {
     try {
       setCameraError("");
-      const mediaStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+      const mediaStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
       setStream(mediaStream);
       setCameraReady(true);
+      const hasAudio = mediaStream.getAudioTracks().length > 0;
+      setMicReady(hasAudio);
       if (videoRef.current) {
         videoRef.current.srcObject = mediaStream;
       }
     } catch {
       setCameraReady(false);
-      setCameraError("Webcam access is required for proctoring verification. Please allow camera permissions.");
+      setMicReady(false);
+      setCameraError("Webcam and microphone access are required for proctoring. Please allow camera & microphone permissions.");
     }
   };
 
@@ -192,6 +196,18 @@ export default function ExamInstructionsPage() {
                   <span className="w-1.5 h-1.5 bg-brand-crimson mt-1.5 shrink-0"></span>
                   <span>AI and instructor proctoring checks will periodically audit session focus.</span>
                 </li>
+                <li className="flex items-start gap-2.5 bg-amber-500/10 p-2.5 border-l-2 border-brand-crimson">
+                  <span className="material-symbols-outlined text-brand-crimson text-[16px] shrink-0 mt-0.5">volume_off</span>
+                  <span>
+                    <strong className="text-black uppercase">Acoustic Isolation Rule:</strong> You must sit in an isolated, quiet room. Any ambient talking, voice speaking, or sound exceeding the calibrated room threshold will trigger an immediate academic integrity infraction and be submitted directly to the instructor.
+                  </span>
+                </li>
+                <li className="flex items-start gap-2.5 bg-amber-500/10 p-2.5 border-l-2 border-brand-crimson">
+                  <span className="material-symbols-outlined text-brand-crimson text-[16px] shrink-0 mt-0.5">volume_off</span>
+                  <span>
+                    <strong className="text-black uppercase">Acoustic Isolation Rule:</strong> You must sit in an isolated, quiet room. Any ambient talking, voice speaking, or sound exceeding the calibrated room threshold will trigger an immediate academic integrity infraction and be submitted directly to the instructor.
+                  </span>
+                </li>
               </ul>
             </div>
 
@@ -217,10 +233,13 @@ export default function ExamInstructionsPage() {
                   </div>
 
                   <div className="flex-1 flex flex-col gap-2">
-                    {cameraReady ? (
-                      <div className="border border-black bg-white p-3 text-xs font-label-caps font-bold text-brand-dark flex items-center gap-2">
-                        <span className="material-symbols-outlined text-brand-crimson">check_circle</span>
-                        WEBCAM READY & PROCTORING ACTIVE
+                    {cameraReady && micReady ? (
+                      <div className="border border-black bg-white p-3 text-xs font-label-caps font-bold text-brand-dark flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <span className="material-symbols-outlined text-brand-crimson">check_circle</span>
+                          <span>WEBCAM & MIC READY // PROCTORING ACTIVE</span>
+                        </div>
+                        <span className="px-2 py-0.5 bg-brand-dark text-white font-mono text-[10px]">ACOUSTIC PROCTOR ON</span>
                       </div>
                     ) : cameraError ? (
                       <div className="border border-brand-crimson bg-white p-3 text-xs text-brand-crimson flex flex-col gap-2">
@@ -257,14 +276,14 @@ export default function ExamInstructionsPage() {
               ) : (
                 <button
                   onClick={handleStartExam}
-                  disabled={starting || !cameraReady}
+                  disabled={starting || !cameraReady || !micReady}
                   className={`w-full sm:w-auto font-label-caps text-xs tracking-[0.2em] uppercase font-bold py-4 px-10 transition-all cursor-pointer ${
                     starting || !cameraReady
                       ? "bg-neutral-300 text-neutral-500 cursor-not-allowed"
                       : "bg-brand-dark hover:bg-brand-crimson text-white border border-brand-dark hover:border-brand-crimson"
                   }`}
                 >
-                  {starting ? "INITIALIZING TEST..." : !cameraReady ? "WAITING FOR CAMERA..." : "START EXAM →"}
+                  {starting ? "INITIALIZING TEST..." : (!cameraReady || !micReady) ? "WAITING FOR CAMERA & MIC..." : "START EXAM →"}
                 </button>
               )}
             </div>

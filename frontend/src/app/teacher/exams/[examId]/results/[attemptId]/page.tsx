@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { getStoredToken } from "@/app/lib/auth";
 import Modal from "@/app/components/Modal";
 import { toast } from "sonner";
+import { API_BASE_URL, getAssetUrl } from "@/app/lib/apiConfig";
 
 interface StackedAlert {
   key: string;
@@ -110,7 +111,7 @@ export default function AttemptReviewPage(props: {
   const [showCheatingModal, setShowCheatingModal] = useState(false);
 
   const token = getStoredToken();
-  const BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api";
+  const BASE_URL = API_BASE_URL;
 
   const fetchData = async () => {
     if (!token) return;
@@ -435,6 +436,30 @@ export default function AttemptReviewPage(props: {
               <span className="font-mono text-xs text-[#0047ff] tracking-normal">{studentEmail}</span>
               ) — <span className="text-on-surface font-medium">{examTitle}</span>
             </p>
+            {(() => {
+              const audioAlerts = (attemptInfo?.cheating_summary?.events || []).filter(
+                (e: any) => e.eventType === "AUDIO_VIOLATION" || e.eventType === "VOICE_DETECTED"
+              );
+              if (audioAlerts.length > 0) {
+                return (
+                  <div className="mt-2 p-3 bg-amber-50 border border-amber-300 text-amber-900 font-mono text-xs flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <span className="material-symbols-outlined text-amber-700 text-[18px]">mic</span>
+                      <span className="font-bold uppercase">
+                        Acoustic Integrity Infraction: {audioAlerts.length} Sound / Talking Incident{audioAlerts.length === 1 ? "" : "s"} Detected
+                      </span>
+                    </div>
+                    <button
+                      onClick={() => setShowCheatingModal(true)}
+                      className="text-xs uppercase font-bold text-amber-900 underline hover:text-black cursor-pointer"
+                    >
+                      View Timestamps →
+                    </button>
+                  </div>
+                );
+              }
+              return null;
+            })()}
           </div>
 
           {/* Live Score Badge + Action Matrix */}
@@ -1108,7 +1133,7 @@ export default function AttemptReviewPage(props: {
                         Surveillance Frame Snapshot:
                       </span>
                       <img
-                        src={alert.snapshotUrl}
+                        src={getAssetUrl(alert.snapshotUrl)}
                         alt="Violation snapshot"
                         className="w-full max-h-48 object-contain border border-outline-variant bg-black"
                       />

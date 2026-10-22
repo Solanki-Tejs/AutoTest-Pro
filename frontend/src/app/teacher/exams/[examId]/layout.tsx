@@ -5,6 +5,7 @@ import { useEffect, useState, use } from "react";
 import { getStoredToken, getStoredUser } from "@/app/lib/auth";
 import { toast } from "sonner";
 import NotificationBell from "@/app/components/NotificationBell";
+import { API_BASE_URL } from "@/app/lib/apiConfig";
 
 export default function ExamWorkspaceLayout(props: {
   children: React.ReactNode;
@@ -34,7 +35,7 @@ export default function ExamWorkspaceLayout(props: {
 
     async function checkProgression() {
       try {
-        const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api"}/exams/${params.examId}`, {
+        const res = await fetch(`${API_BASE_URL}/exams/${params.examId}`, {
           headers: { Authorization: `Bearer ${token}` },
         });
         if (!res.ok) return;
@@ -52,13 +53,13 @@ export default function ExamWorkspaceLayout(props: {
         }
 
         const [bpRes, qbRes, abRes] = await Promise.all([
-          fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api"}/exams/${params.examId}/blueprint`, {
+          fetch(`${API_BASE_URL}/exams/${params.examId}/blueprint`, {
             headers: { Authorization: `Bearer ${token}` },
           }).catch(() => null),
-          fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api"}/exams/${params.examId}/question-bank`, {
+          fetch(`${API_BASE_URL}/exams/${params.examId}/question-bank`, {
             headers: { Authorization: `Bearer ${token}` },
           }).catch(() => null),
-          fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api"}/exams/${params.examId}/answers`, {
+          fetch(`${API_BASE_URL}/exams/${params.examId}/answers`, {
             headers: { Authorization: `Bearer ${token}` },
           }).catch(() => null),
         ]);

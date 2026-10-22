@@ -59,6 +59,7 @@ def test_publish_exam_success(mock_db):
          patch('services.question_bank_service.get_active_question_bank', return_value=mock_question_bank), \
          patch('services.answer_bank_service.get_active_answer_bank', return_value=mock_answer_bank), \
          patch('services.syllabus_service.get_available_syllabuses_for_exam', return_value=[{"id": "pdf1", "status": "READY"}]), \
+         patch('services.answer_bank_service.update_answer_bank', return_value=None), \
          patch('services.exam_service.update_exam', return_value={**mock_exam, "status": "published"}):
         
         result = validate_and_publish_exam(exam_id, teacher_id, start_time, end_time, mock_db)

@@ -68,7 +68,7 @@ def approve_question_bank(exam_id: str, background_tasks: BackgroundTasks, db: S
     from services.answer_generation_service import generate_answers_job
     from services.answer_bank_service import get_answer_generation_status
     current_status = get_answer_generation_status(exam_id)
-    if not current_status or current_status.get("status") not in ["generating", "complete"]:
+    if not current_status or current_status.get("status") not in ["generating", "complete", "generated"]:
         background_tasks.add_task(generate_answers_job, exam_id, db)
 
     return {"status": "approved"}

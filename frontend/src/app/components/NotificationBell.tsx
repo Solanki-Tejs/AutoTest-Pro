@@ -51,12 +51,51 @@ function getNotificationIcon(type: string): string {
   }
 }
 
+export function playNotificationSound() {
+  try {
+    const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+    if (!AudioCtx) return;
+    const ctx = new AudioCtx();
+    const now = ctx.currentTime;
+
+    // First note: E5 (659.25 Hz)
+    const osc1 = ctx.createOscillator();
+    const gain1 = ctx.createGain();
+    osc1.type = "sine";
+    osc1.frequency.setValueAtTime(659.25, now);
+    gain1.gain.setValueAtTime(0, now);
+    gain1.gain.linearRampToValueAtTime(0.28, now + 0.02);
+    gain1.gain.exponentialRampToValueAtTime(0.001, now + 0.22);
+    osc1.connect(gain1);
+    gain1.connect(ctx.destination);
+    osc1.start(now);
+    osc1.stop(now + 0.22);
+
+    // Second note: A5 (880.00 Hz) - higher harmonic chime
+    const osc2 = ctx.createOscillator();
+    const gain2 = ctx.createGain();
+    osc2.type = "sine";
+    osc2.frequency.setValueAtTime(880.0, now + 0.1);
+    gain2.gain.setValueAtTime(0, now + 0.1);
+    gain2.gain.linearRampToValueAtTime(0.32, now + 0.12);
+    gain2.gain.exponentialRampToValueAtTime(0.001, now + 0.5);
+    osc2.connect(gain2);
+    gain2.connect(ctx.destination);
+    osc2.start(now + 0.1);
+    osc2.stop(now + 0.5);
+  } catch {
+    // Autoplay policy or browser restricted
+  }
+}
+
 export default function NotificationBell({ role = "teacher" }: { role?: "teacher" | "student" }) {
   const router = useRouter();
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const [isOpen, setIsOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
+  const knownIdsRef = useRef<Set<string>>(new Set());
+  const initialLoadDoneRef = useRef(false);
 
   const accentColor = role === "teacher" ? "#0047ff" : "#ff1d58";
 
@@ -65,15 +104,73 @@ export default function NotificationBell({ role = "teacher" }: { role?: "teacher
     if (!token) return;
     try {
       const data = await fetchNotifications(token);
-      setNotifications(Array.isArray(data) ? data : []);
+      const items: AppNotification[] = Array.isArray(data) ? data : [];
+      setNotifications(items);
+
+      if (initialLoadDoneRef.current) {
+        // Detect newly arrived unread notifications
+        const newlyArrived = items.filter(
+          (n) => !n.is_read && !knownIdsRef.current.has(n.id)
+        );
+
+        if (newlyArrived.length > 0) {
+          playNotificationSound();
+          newlyArrived.forEach((notif) => {
+            const linkUrl = notif.link;
+            toast(notif.title || "New Notification", {
+              description: notif.message,
+              action: linkUrl
+                ? {
+                    label: "View",
+                    onClick: () => {
+                      markNotificationRead(token, notif.id).catch(() => {});
+                      router.push(linkUrl);
+                    },
+                  }
+                : undefined,
+              duration: 8000,
+            });
+          });
+        }
+      } else {
+        // First load: trigger pop-up if an unread notification was issued in the last 20 seconds
+        const recentUnread = items.filter((n) => {
+          if (n.is_read) return false;
+          const created = new Date(n.created_at).getTime();
+          return !isNaN(created) && Math.abs(Date.now() - created) < 20000;
+        });
+
+        if (recentUnread.length > 0) {
+          playNotificationSound();
+          recentUnread.forEach((notif) => {
+            const linkUrl = notif.link;
+            toast(notif.title || "New Notification", {
+              description: notif.message,
+              action: linkUrl
+                ? {
+                    label: "View",
+                    onClick: () => {
+                      markNotificationRead(token, notif.id).catch(() => {});
+                      router.push(linkUrl);
+                    },
+                  }
+                : undefined,
+              duration: 8000,
+            });
+          });
+        }
+      }
+
+      initialLoadDoneRef.current = true;
+      knownIdsRef.current = new Set(items.map((n) => n.id));
     } catch {
       // silently fail in background
     }
-  }, []);
+  }, [router]);
 
   useEffect(() => {
     loadNotifications();
-    const interval = setInterval(loadNotifications, 25000); // 25-second poll
+    const interval = setInterval(loadNotifications, 8000); // 8-second poll for responsive notification popups
     return () => clearInterval(interval);
   }, [loadNotifications]);
 

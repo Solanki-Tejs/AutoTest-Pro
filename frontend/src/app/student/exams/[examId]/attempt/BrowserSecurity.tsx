@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { getStoredToken } from "@/app/lib/auth";
+import { API_BASE_URL } from "@/app/lib/apiConfig";
 
 interface BrowserSecurityProps {
   examId: string;
@@ -25,7 +26,7 @@ export default function BrowserSecurity({ examId, attemptId }: BrowserSecurityPr
     const fetchSettings = async () => {
       try {
         const token = getStoredToken();
-        const res = await fetch("http://localhost:8000/api/settings", {
+        const res = await fetch(`${API_BASE_URL}/settings`, {
           headers: { "Authorization": `Bearer ${token}` }
         });
         if (res.ok) {
@@ -46,7 +47,7 @@ export default function BrowserSecurity({ examId, attemptId }: BrowserSecurityPr
       const token = getStoredToken();
       if (!token) return;
 
-      await fetch(`http://localhost:8000/api/student/exams/${examId}/attempts/${attemptId}/proctoring/violation`, {
+      await fetch(`${API_BASE_URL}/student/exams/${examId}/attempts/${attemptId}/proctoring/violation`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

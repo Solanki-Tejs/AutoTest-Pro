@@ -13,10 +13,23 @@ from services.exam_blueprint_service import get_blueprint
 from services.question_bank_service import save_question_bank, get_active_question_bank, set_generation_status, update_question_bank
 from services.answer_bank_service import mark_answer_stale
 from services.question_validation_service import validate_generated_questions
+from services.gemini_service import generate_with_gemini
+import re
+
+def calculate_pool_size(count: int) -> int:
+    """Calculates question pool size to prevent exam paper leaks."""
+    if count <= 1:
+        return 6
+    elif count <= 3:
+        return count * 3
+    elif count <= 10:
+        return round(count * 1.8)
+    else:
+        return round(count * 1.5)
 
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://127.0.0.1:11434").rstrip("/")
 OLLAMA_API_URL = f"{OLLAMA_BASE_URL}/api/generate"
-OLLAMA_GENERATION_MODEL = os.getenv("OLLAMA_GENERATION_MODEL", "mistral:7b").strip()
+OLLAMA_GENERATION_MODEL = os.getenv("OLLAMA_GENERATION_MODEL", os.getenv("OLLAMA_LLM_MODEL", "qwen2.5:7b")).strip()
 
 def get_context_for_exam(exam: dict, db: Session) -> str:
     """
@@ -119,33 +132,8 @@ Respond STRICTLY with JSON matching the required schema.
     return prompt, json_schema
 
 def generate_section_questions_with_gemini(section: dict, context: str, existing_questions: str = "") -> List[Dict[str, Any]]:
-    gemini_api_key = os.getenv("GEMINI_API_KEY", "").strip()
-    gemini_model = os.getenv("GEMINI_MODEL", "gemini-2.5-flash").strip()
-    if not gemini_api_key:
-        raise ValueError("GEMINI_API_KEY is missing or empty")
-
     prompt, json_schema = _build_prompt_and_schema(section, context, existing_questions)
-
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/{gemini_model}:generateContent?key={gemini_api_key}"
-    payload = {
-        "contents": [{"parts": [{"text": prompt}]}],
-        "generationConfig": {
-            "temperature": 0.3,
-            "responseMimeType": "application/json",
-            "responseSchema": json_schema
-        }
-    }
-
-    req = urllib.request.Request(
-        url,
-        data=json.dumps(payload).encode('utf-8'),
-        headers={'Content-Type': 'application/json'},
-        method='POST'
-    )
-    with urllib.request.urlopen(req, timeout=120) as response:
-        result = json.loads(response.read().decode('utf-8'))
-        content = result.get("candidates", [])[0].get("content", {}).get("parts", [])[0].get("text", "{}")
-        return json.loads(content)
+    return generate_with_gemini(prompt, json_schema=json_schema, temperature=0.3)
 
 def generate_section_questions_with_ollama(section: dict, context: str, existing_questions: str = "") -> List[Dict[str, Any]]:
     prompt, json_schema = _build_prompt_and_schema(section, context, existing_questions)
@@ -215,26 +203,38 @@ def generate_exam_paper_job(exam_id: str, db: Session):
             progress = 10 + int(80 * (idx / max(sections_count, 1)))
             set_generation_status(exam_id, "generating", progress=progress, current_section=f"Generating {section_dict.get('section')}")
             
-            # Retry loop for generation
+            required_count = section_dict.get("count", 1)
+            target_pool_size = calculate_pool_size(required_count)
+            gen_section_dict = {**section_dict, "count": target_pool_size}
+
+            # Retry loop for generation with strict deduplication
             valid_questions = []
+            seen_normalized = set(re.sub(r"[^a-zA-Z0-9]", "", t).lower() for t in all_existing_text)
             retries = 0
-            while len(valid_questions) < section_dict.get("count", 1) and retries < 3:
-                llm_output = generate_section_questions(section_dict, context, existing_questions="\n".join(all_existing_text))
-                new_valid = validate_generated_questions(llm_output, section_dict)
-                valid_questions.extend(new_valid)
+            while len(valid_questions) < target_pool_size and retries < 4:
+                llm_output = generate_section_questions(gen_section_dict, context, existing_questions="\n".join(all_existing_text))
+                new_valid = validate_generated_questions(llm_output, gen_section_dict)
+                for q in new_valid:
+                    q_text = q.get("question_text", "")
+                    norm = re.sub(r"[^a-zA-Z0-9]", "", q_text).lower()
+                    if norm and norm not in seen_normalized:
+                        seen_normalized.add(norm)
+                        valid_questions.append(q)
+                        all_existing_text.append(q_text)
                 retries += 1
-                
-            # If we generated too many, slice it
-            valid_questions = valid_questions[:section_dict.get("count", 1)]
-            
-            # Add to text tracker for avoiding duplicates and assign order
+
+            # Slice to target_pool_size if surplus
+            valid_questions = valid_questions[:target_pool_size]
+
+            # Assign order
             for idx_q, q in enumerate(valid_questions):
                 q["order"] = idx_q
-                all_existing_text.append(q["question_text"])
-                
+
             generated_sections.append({
                 "sectionNo": chr(65 + idx),
                 "sectionName": section_dict.get("section"),
+                "required_count": required_count,
+                "pool_size": len(valid_questions),
                 "questions": valid_questions
             })
             
@@ -267,7 +267,7 @@ def generate_exam_paper_job(exam_id: str, db: Session):
         }
         
         save_question_bank(new_paper)
-        set_generation_status(exam_id, "generated", progress=100)
+        set_generation_status(exam_id, "complete", progress=100)
 
         # Notify Teacher
         try:
