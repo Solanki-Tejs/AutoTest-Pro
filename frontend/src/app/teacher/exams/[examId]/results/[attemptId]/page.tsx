@@ -15,6 +15,7 @@ interface StackedAlert {
   timestamps: string[];
   lastTimestamp: string;
   snapshotUrl?: string;
+  audioUrl?: string;
 }
 
 function groupAlerts(events: any[]): StackedAlert[] {
@@ -37,7 +38,8 @@ function groupAlerts(events: any[]): StackedAlert[] {
       desc = `Proctoring alert: ${type.replace(/_/g, " ")}`;
     }
 
-    const snapshot = ev.details?.snapshot_url || ev.snapshot_url;
+    const snapshot = ev.details?.snapshot_url || ev.snapshot_url || ev.details?.metadata?.snapshot_url;
+    const audio = ev.details?.audio_url || ev.audio_url || ev.details?.metadata?.audio_url;
     const ts = ev.timestamp || "";
 
     const key = `${type.toUpperCase()}:::${desc.toLowerCase()}`;
@@ -51,6 +53,7 @@ function groupAlerts(events: any[]): StackedAlert[] {
         timestamps: ts ? [ts] : [],
         lastTimestamp: ts,
         snapshotUrl: snapshot,
+        audioUrl: audio,
       });
     } else {
       const item = map.get(key)!;
@@ -61,6 +64,9 @@ function groupAlerts(events: any[]): StackedAlert[] {
       }
       if (snapshot && !item.snapshotUrl) {
         item.snapshotUrl = snapshot;
+      }
+      if (audio && !item.audioUrl) {
+        item.audioUrl = audio;
       }
     }
   }
@@ -478,6 +484,21 @@ export default function AttemptReviewPage(props: {
                 <span className="font-mono text-xs text-[#0047ff] font-bold ml-1">
                   ({scorePercentage}%)
                 </span>
+                {(() => {
+                  const passPct = attemptInfo?.exam?.passing_percentage ?? 40.0;
+                  const isPassCandidate = Number(scorePercentage) >= passPct;
+                  return (
+                    <span
+                      className={`ml-2 px-2 py-0.5 font-mono text-[10px] font-bold uppercase tracking-wider ${
+                        isPassCandidate
+                          ? "bg-[#e8f5e9] text-[#005430] border border-[#81c784]"
+                          : "bg-[#ffdad6] text-[#ba1a1a] border border-[#ba1a1a]"
+                      }`}
+                    >
+                      {isPassCandidate ? "PASS" : "FAIL"} ({passPct}%)
+                    </span>
+                  );
+                })()}
               </div>
             </div>
 
@@ -967,22 +988,51 @@ export default function AttemptReviewPage(props: {
                     {stackedAlerts.slice(0, 5).map((alert, i) => (
                       <div
                         key={alert.key || i}
-                        className="bg-surface-container-low p-3 border border-outline-variant/60 flex items-start gap-2.5"
+                        className="bg-surface-container-low p-3 border border-outline-variant/60 flex flex-col gap-2"
                       >
-                        <div className="w-2 h-2 mt-1.5 bg-[#ba1a1a] shrink-0" />
-                        <div className="flex flex-col flex-1 min-w-0">
-                          <div className="flex items-center justify-between gap-2">
-                            <span className="font-mono text-[11px] font-bold text-on-surface uppercase truncate">
-                              {alert.eventType} ({alert.count}x)
-                            </span>
-                            <span className="font-mono text-[10px] text-secondary shrink-0">
-                              {formatAlertTimestamp(alert.lastTimestamp)}
+                        <div className="flex items-start gap-2.5">
+                          <div className="w-2 h-2 mt-1.5 bg-[#ba1a1a] shrink-0" />
+                          <div className="flex flex-col flex-1 min-w-0">
+                            <div className="flex items-center justify-between gap-2">
+                              <span className="font-mono text-[11px] font-bold text-on-surface uppercase truncate">
+                                {alert.eventType} ({alert.count}x)
+                              </span>
+                              <span className="font-mono text-[10px] text-secondary shrink-0">
+                                {formatAlertTimestamp(alert.lastTimestamp)}
+                              </span>
+                            </div>
+                            <span className="font-sans text-xs text-secondary mt-0.5 leading-relaxed">
+                              {alert.description}
                             </span>
                           </div>
-                          <span className="font-sans text-xs text-secondary mt-0.5 line-clamp-2">
-                            {alert.description}
-                          </span>
                         </div>
+
+                        {alert.snapshotUrl && (
+                          <div className="mt-1 pl-4.5">
+                            <span className="font-mono text-[9px] uppercase font-bold text-secondary block mb-1">
+                              Incident Photo Evidence:
+                            </span>
+                            <img
+                              src={getAssetUrl(alert.snapshotUrl)}
+                              alt="Biometric surveillance snapshot"
+                              className="w-full max-h-36 object-contain border border-black bg-black"
+                              loading="lazy"
+                            />
+                          </div>
+                        )}
+
+                        {alert.audioUrl && (
+                          <div className="mt-1 pl-4.5">
+                            <span className="font-mono text-[9px] uppercase font-bold text-secondary block mb-1">
+                              Recorded Audio Incident:
+                            </span>
+                            <audio
+                              controls
+                              src={getAssetUrl(alert.audioUrl)}
+                              className="w-full h-8"
+                            />
+                          </div>
+                        )}
                       </div>
                     ))}
                   </div>
@@ -1130,12 +1180,26 @@ export default function AttemptReviewPage(props: {
                   {alert.snapshotUrl && (
                     <div className="mt-2">
                       <span className="font-mono text-[10px] text-secondary uppercase font-bold block mb-1">
-                        Surveillance Frame Snapshot:
+                        Surveillance Photo Snapshot Evidence:
                       </span>
                       <img
                         src={getAssetUrl(alert.snapshotUrl)}
                         alt="Violation snapshot"
-                        className="w-full max-h-48 object-contain border border-outline-variant bg-black"
+                        className="w-full max-h-56 object-contain border border-black bg-black"
+                      />
+                    </div>
+                  )}
+
+                  {alert.audioUrl && (
+                    <div className="mt-2 p-2.5 bg-black/5 border border-black/20">
+                      <span className="font-mono text-[10px] text-secondary uppercase font-bold block mb-1 flex items-center gap-1">
+                        <span className="material-symbols-outlined text-[14px]">volume_up</span>
+                        Acoustic Surveillance Audio Clip:
+                      </span>
+                      <audio
+                        controls
+                        src={getAssetUrl(alert.audioUrl)}
+                        className="w-full h-8 mt-1"
                       />
                     </div>
                   )}

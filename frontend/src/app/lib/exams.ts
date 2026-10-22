@@ -21,6 +21,7 @@ export interface Exam {
   end_time?: string;
   status: string;
   created_at: string;
+  passing_percentage?: number;
 }
 
 export interface SyllabusAvailable {
@@ -46,6 +47,7 @@ export interface Section {
 export interface Blueprint {
   exam_id: string;
   total_marks: number;
+  passing_percentage?: number;
   version?: number;
   sections: Section[];
 }
@@ -190,12 +192,13 @@ export async function saveExamBlueprint(
   token: string,
   examId: string,
   sections: Section[],
-  version?: number
+  version?: number,
+  passing_percentage?: number
 ): Promise<Blueprint> {
   const res = await fetch(`${BASE_URL}/exams/${examId}/blueprint`, {
     method: "POST",
     headers: authHeaders(token),
-    body: JSON.stringify({ version, sections }),
+    body: JSON.stringify({ version, sections, passing_percentage }),
   });
   if (!res.ok) {
     const error = await res.json();

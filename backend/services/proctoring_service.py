@@ -187,3 +187,46 @@ def log_browser_violation(student_id: int, exam_id: str, attempt_id: str, event_
         upsert=True
     )
     return {"status": "success", "event_type": event_type}
+
+def save_audio_violation(student_id: int, exam_id: str, attempt_id: str, file: UploadFile, duration: float, peak_rms: float) -> dict:
+    contents = file.file.read()
+    if not contents:
+        raise ValueError("Empty audio payload")
+
+    filename = f"{uuid.uuid4()}.webm"
+    audio_path = os.path.join(UPLOAD_DIR, filename)
+    with open(audio_path, "wb") as f:
+        f.write(contents)
+
+    audio_url = f"/uploads/proctoring/{filename}"
+    dur_rounded = round(float(duration or 5.0), 1)
+    rms_rounded = round(float(peak_rms or 0.0), 3)
+
+    mongo_db = get_mongo_db()
+    event = {
+        "event_id": str(uuid.uuid4()),
+        "eventType": "AUDIO_VIOLATION",
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "details": {
+            "description": f"Acoustic threshold exceeded ({dur_rounded}s recorded, peak volume: {rms_rounded}).",
+            "duration_seconds": dur_rounded,
+            "audio_url": audio_url,
+            "snapshot_url": None,
+            "metadata": {
+                "duration_seconds": dur_rounded,
+                "peak_rms": rms_rounded,
+                "audio_url": audio_url
+            }
+        }
+    }
+
+    mongo_db.proctoring_events.update_one(
+        {"attempt_id": attempt_id},
+        {
+            "$setOnInsert": {"attempt_id": attempt_id, "exam_id": exam_id, "student_id": student_id},
+            "$push": {"events": event}
+        },
+        upsert=True
+    )
+    return {"status": "success", "audio_url": audio_url, "event_type": "AUDIO_VIOLATION"}
+

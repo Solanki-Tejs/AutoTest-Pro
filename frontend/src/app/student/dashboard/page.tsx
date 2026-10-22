@@ -16,7 +16,34 @@ import NotificationBell from "@/app/components/NotificationBell";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 
-type Tab = "join" | "my-classes" | "profile";
+type Tab = "join" | "my-classes" | "profile" | "upcoming";
+
+function parseUtcDate(dateStr?: string | null): Date | null {
+  if (!dateStr) return null;
+  const normalized = dateStr.match(/(Z|[+-]\d{2}(:\d{2})?)$/) ? dateStr : `${dateStr}Z`;
+  const d = new Date(normalized);
+  return isNaN(d.getTime()) ? null : d;
+}
+
+function formatScheduleWindow(startStr?: string, endStr?: string): string {
+  if (!startStr && !endStr) return "Open Window (No Restrictions)";
+  const opts: Intl.DateTimeFormatOptions = {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+  };
+  const startDate = parseUtcDate(startStr);
+  const endDate = parseUtcDate(endStr);
+  if (startDate && endDate) {
+    return `${startDate.toLocaleString("en-US", opts)} — ${endDate.toLocaleString("en-US", opts)}`;
+  }
+  if (startDate) return `Opens ${startDate.toLocaleString("en-US", opts)}`;
+  if (endDate) return `Ends ${endDate.toLocaleString("en-US", opts)}`;
+  return "Open Window";
+}
 
 export default function StudentDashboard() {
   const router = useRouter();
@@ -43,6 +70,9 @@ export default function StudentDashboard() {
 
   const [classSearch, setClassSearch] = useState("");
   const [classTab, setClassTab] = useState<"active" | "pending">("active");
+  const [allStudentExams, setAllStudentExams] = useState<StudentExam[]>([]);
+  const [examCategoryFilter, setExamCategoryFilter] = useState<"all" | "active" | "awaiting" | "graded" | "missed">("all");
+  const [examSearch, setExamSearch] = useState("");
 
   // Custom Invite URL modal, profile dropdown, and class counts
   const [urlModalOpen, setUrlModalOpen] = useState(false);
@@ -146,6 +176,7 @@ export default function StudentDashboard() {
     getAllStudentExams(token)
       .then(async (exams) => {
         if (cancelled) return;
+        setAllStudentExams(exams);
         const stats: Record<number, { examsCount: number; syllabusCount: number }> = {};
         await Promise.all(
           approved.map(async (cls) => {
@@ -436,6 +467,31 @@ export default function StudentDashboard() {
               {approvedClasses.length > 0 && (
                 <span className="px-2 py-0.5 bg-primary text-white text-[10px] font-bold font-sans">
                   {approvedClasses.length}
+                </span>
+              )}
+            </button>
+
+            <button
+              onClick={() => { setTab("upcoming"); closeClass(); }}
+              className={`w-full flex items-center justify-between px-3.5 py-3 tracking-widest text-xs uppercase transition-colors cursor-pointer text-left ${
+                tab === "upcoming" && !selectedClass
+                  ? "bg-black text-white font-bold"
+                  : "bg-surface-container-lowest text-secondary hover:text-black hover:bg-surface-container font-semibold"
+              }`}
+            >
+              <div className="flex items-center gap-3">
+                <span
+                  className={`material-symbols-outlined text-[18px] ${
+                    tab === "upcoming" && !selectedClass ? "text-primary" : "text-secondary"
+                  }`}
+                >
+                  fact_check
+                </span>
+                <span>My Exams</span>
+              </div>
+              {allStudentExams.length > 0 && (
+                <span className="px-2 py-0.5 bg-primary text-white text-[10px] font-bold font-sans">
+                  {allStudentExams.length}
                 </span>
               )}
             </button>
@@ -1282,6 +1338,451 @@ export default function StudentDashboard() {
                 </div>
               )}
 
+              {/* ── TAB 4: UPCOMING EXAMS SCHEDULE ── */}
+              {tab === "upcoming" && (
+                <div className="animate-fade-up max-w-6xl flex flex-col gap-8">
+                  {/* Accent & Header */}
+                  <div>
+                    <div className="w-12 h-1 bg-brand-crimson mb-6"></div>
+                    <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 pb-6 border-b border-black">
+                      <div>
+                        <div className="flex items-center gap-2 mb-2">
+                          <span className="w-2 h-2 bg-brand-crimson"></span>
+                          <span className="font-mono text-xs uppercase tracking-widest font-bold text-neutral-500">
+                            CANDIDATE LEDGER // ALL ENROLLED COURSES
+                          </span>
+                        </div>
+                        <h1 className="font-serif text-3xl sm:text-4xl text-[#111111] font-semibold tracking-tight">
+                          My Examinations &amp; Records
+                        </h1>
+                        <p className="font-sans text-xs text-neutral-600 mt-1 max-w-2xl">
+                          Track upcoming test schedules, review papers awaiting grading, and inspect authoritative transcripts with accredited Pass/Fail benchmarks.
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="font-mono text-xs uppercase tracking-widest px-3 py-1 bg-black text-white font-bold">
+                          {allStudentExams.length} TOTAL ASSIGNED
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {(() => {
+                    const now = new Date();
+
+                    // Pre-classify all exams
+                    const categorized = allStudentExams.map((exam) => {
+                      const isSubmitted = exam.attempt && (exam.attempt.status === "submitted" || exam.attempt.status === "evaluated");
+                      const isResultPublished = Boolean(exam.attempt?.result_published_at);
+                      const isGraded = Boolean(isSubmitted && isResultPublished);
+                      const isAwaiting = Boolean(isSubmitted && !isResultPublished);
+                      const isInProgress = Boolean(exam.attempt && exam.attempt.status === "in_progress");
+
+                      const start = parseUtcDate(exam.start_time);
+                      const end = parseUtcDate(exam.end_time);
+
+                      const isUpcoming = Boolean(start && now < start && !isSubmitted && !isInProgress);
+                      const isEnded = Boolean(end && now > end && !isSubmitted && !isInProgress);
+                      const isWindowActive = Boolean((!start || now >= start) && (!end || now <= end) && !isSubmitted && !isInProgress);
+
+                      const passThreshold = exam.passing_percentage !== undefined && exam.passing_percentage !== null ? Number(exam.passing_percentage) : 40.0;
+                      const hasScore = isGraded && exam.attempt?.total_marks !== undefined && exam.attempt?.total_marks !== null;
+                      const rawScore = hasScore ? Number(exam.attempt!.total_marks) : 0;
+                      const adjScore = Number(exam.attempt?.adjustment_marks || 0);
+                      const totalScore = hasScore ? Math.max(0, rawScore + adjScore) : null;
+                      const maxScore = exam.total_marks || 100;
+                      const scorePct = totalScore !== null && maxScore > 0 ? Math.round((totalScore / maxScore) * 100) : null;
+                      const isPass = scorePct !== null && scorePct >= passThreshold;
+
+                      return {
+                        exam,
+                        isSubmitted,
+                        isResultPublished,
+                        isGraded,
+                        isAwaiting,
+                        isInProgress,
+                        isUpcoming,
+                        isEnded,
+                        isWindowActive,
+                        passThreshold,
+                        totalScore,
+                        maxScore,
+                        scorePct,
+                        isPass,
+                        start,
+                        end,
+                      };
+                    });
+
+                    // KPI counts
+                    const activeCount = categorized.filter((c) => c.isInProgress || c.isWindowActive || c.isUpcoming).length;
+                    const awaitingCount = categorized.filter((c) => c.isAwaiting).length;
+                    const gradedCount = categorized.filter((c) => c.isGraded).length;
+                    const missedCount = categorized.filter((c) => c.isEnded).length;
+                    const passedCount = categorized.filter((c) => c.isGraded && c.isPass).length;
+
+                    // Filtered list
+                    const filtered = categorized.filter((item) => {
+                      if (examCategoryFilter === "active" && !(item.isInProgress || item.isWindowActive || item.isUpcoming)) return false;
+                      if (examCategoryFilter === "awaiting" && !item.isAwaiting) return false;
+                      if (examCategoryFilter === "graded" && !item.isGraded) return false;
+                      if (examCategoryFilter === "missed" && !item.isEnded) return false;
+
+                      if (examSearch.trim()) {
+                        const q = examSearch.toLowerCase().trim();
+                        const title = (item.exam.title || "").toLowerCase();
+                        const course = (item.exam.class_name || "").toLowerCase();
+                        if (!title.includes(q) && !course.includes(q)) return false;
+                      }
+
+                      return true;
+                    });
+
+                    return (
+                      <div className="space-y-6">
+                        {/* 4 Summary Metric Cards */}
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                          <div
+                            onClick={() => setExamCategoryFilter("all")}
+                            className={`p-4 border-2 border-black transition-all cursor-pointer ${
+                              examCategoryFilter === "all"
+                                ? "bg-black text-white shadow-[4px_4px_0px_#ba1a1a]"
+                                : "bg-white text-[#111111] shadow-[3px_3px_0px_#111111] hover:bg-neutral-50"
+                            }`}
+                          >
+                            <span className="font-mono text-[10px] uppercase tracking-widest block font-bold mb-1 opacity-80">
+                              TOTAL ENROLLED
+                            </span>
+                            <div className="font-serif text-3xl font-bold leading-none">
+                              {categorized.length}
+                            </div>
+                            <span className="font-sans text-[11px] opacity-70 mt-1 block">
+                              All assigned papers
+                            </span>
+                          </div>
+
+                          <div
+                            onClick={() => setExamCategoryFilter("active")}
+                            className={`p-4 border-2 border-black transition-all cursor-pointer ${
+                              examCategoryFilter === "active"
+                                ? "bg-black text-white shadow-[4px_4px_0px_#ba1a1a]"
+                                : "bg-white text-[#111111] shadow-[3px_3px_0px_#111111] hover:bg-neutral-50"
+                            }`}
+                          >
+                            <span className="font-mono text-[10px] uppercase tracking-widest block font-bold mb-1 text-emerald-600">
+                              ACTIVE &amp; UPCOMING
+                            </span>
+                            <div className="font-serif text-3xl font-bold leading-none text-emerald-600">
+                              {activeCount}
+                            </div>
+                            <span className="font-sans text-[11px] opacity-70 mt-1 block">
+                              Ready or scheduled
+                            </span>
+                          </div>
+
+                          <div
+                            onClick={() => setExamCategoryFilter("awaiting")}
+                            className={`p-4 border-2 border-black transition-all cursor-pointer ${
+                              examCategoryFilter === "awaiting"
+                                ? "bg-black text-white shadow-[4px_4px_0px_#ba1a1a]"
+                                : "bg-white text-[#111111] shadow-[3px_3px_0px_#111111] hover:bg-neutral-50"
+                            }`}
+                          >
+                            <span className="font-mono text-[10px] uppercase tracking-widest block font-bold mb-1 text-amber-600">
+                              AWAITING REVIEW
+                            </span>
+                            <div className="font-serif text-3xl font-bold leading-none text-amber-600">
+                              {awaitingCount}
+                            </div>
+                            <span className="font-sans text-[11px] opacity-70 mt-1 block">
+                              Pending instructor release
+                            </span>
+                          </div>
+
+                          <div
+                            onClick={() => setExamCategoryFilter("graded")}
+                            className={`p-4 border-2 border-black transition-all cursor-pointer ${
+                              examCategoryFilter === "graded"
+                                ? "bg-black text-white shadow-[4px_4px_0px_#ba1a1a]"
+                                : "bg-white text-[#111111] shadow-[3px_3px_0px_#111111] hover:bg-neutral-50"
+                            }`}
+                          >
+                            <span className="font-mono text-[10px] uppercase tracking-widest block font-bold mb-1 text-[#0047ff]">
+                              GRADED TRANSCRIPTS
+                            </span>
+                            <div className="font-serif text-3xl font-bold leading-none text-[#0047ff]">
+                              {gradedCount}
+                            </div>
+                            <span className="font-sans text-[11px] opacity-70 mt-1 block">
+                              {passedCount} Passed benchmark
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* Interactive Filter Pills & Search Bar */}
+                        <div className="bg-white border-2 border-black p-4 shadow-[4px_4px_0px_#111111] flex flex-col md:flex-row md:items-center justify-between gap-4">
+                          <div className="flex flex-wrap items-center gap-2">
+                            {[
+                              { id: "all", label: "ALL PAPERS", count: categorized.length },
+                              { id: "active", label: "ACTIVE & UPCOMING", count: activeCount },
+                              { id: "awaiting", label: "AWAITING RESULTS", count: awaitingCount },
+                              { id: "graded", label: "COMPLETED & GRADED", count: gradedCount },
+                              { id: "missed", label: "MISSED", count: missedCount },
+                            ].map((f) => (
+                              <button
+                                key={f.id}
+                                type="button"
+                                onClick={() => setExamCategoryFilter(f.id as any)}
+                                className={`px-3 py-1.5 font-mono text-[11px] font-bold uppercase tracking-wider border border-black transition-all cursor-pointer inline-flex items-center gap-1.5 ${
+                                  examCategoryFilter === f.id
+                                    ? "bg-black text-white shadow-[2px_2px_0px_#111111]"
+                                    : "bg-surface hover:bg-neutral-100 text-[#111111]"
+                                }`}
+                              >
+                                <span>{f.label}</span>
+                                <span className={`px-1.5 py-0.2 text-[10px] font-bold ${
+                                  examCategoryFilter === f.id ? "bg-white text-black" : "bg-neutral-200 text-black"
+                                }`}>
+                                  {f.count}
+                                </span>
+                              </button>
+                            ))}
+                          </div>
+
+                          <div className="relative min-w-[240px]">
+                            <span className="material-symbols-outlined absolute left-3 top-2.5 text-neutral-400 text-[18px]">
+                              search
+                            </span>
+                            <input
+                              type="text"
+                              value={examSearch}
+                              onChange={(e) => setExamSearch(e.target.value)}
+                              placeholder="Search assessment or course..."
+                              className="w-full pl-9 pr-3 py-2 bg-surface border border-black font-sans text-xs outline-none focus:border-[#ba1a1a]"
+                            />
+                            {examSearch && (
+                              <button
+                                onClick={() => setExamSearch("")}
+                                className="absolute right-2.5 top-2.5 text-neutral-400 hover:text-black font-bold text-xs"
+                              >
+                                ×
+                              </button>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Table or Empty State */}
+                        {filtered.length === 0 ? (
+                          <div className="bg-white border-2 border-black p-12 text-center shadow-[4px_4px_0px_#111111]">
+                            <span className="material-symbols-outlined text-4xl text-neutral-400 mb-3 block">
+                              inventory_2
+                            </span>
+                            <h3 className="font-serif text-2xl font-bold text-[#111111] mb-2">
+                              No Examinations Found
+                            </h3>
+                            <p className="font-sans text-xs text-neutral-600 max-w-md mx-auto mb-6">
+                              No assessment records match your current filter selection. Clear filters to review all papers.
+                            </p>
+                            <button
+                              onClick={() => { setExamCategoryFilter("all"); setExamSearch(""); }}
+                              className="px-6 py-2.5 bg-black hover:bg-brand-crimson text-white font-mono text-xs uppercase tracking-widest font-bold transition-colors border border-black cursor-pointer"
+                            >
+                              Reset Filters
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="bg-white border-2 border-black shadow-[6px_6px_0px_#111111] overflow-x-auto">
+                            <table className="w-full border-collapse text-left font-sans text-xs">
+                              <thead>
+                                <tr className="border-b-2 border-black bg-[#f9f9f9] font-mono text-[11px] uppercase tracking-wider text-[#111111]">
+                                  <th className="py-3.5 px-5 font-bold">Assessment &amp; Course</th>
+                                  <th className="py-3.5 px-5 font-bold">Window Schedule / Submission</th>
+                                  <th className="py-3.5 px-5 font-bold">Specifications &amp; Benchmark</th>
+                                  <th className="py-3.5 px-5 font-bold text-center">Status / Rating</th>
+                                  <th className="py-3.5 px-5 font-bold text-right">Action</th>
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y divide-black/10">
+                                {filtered.map((item) => {
+                                  const {
+                                    exam,
+                                    isSubmitted,
+                                    isGraded,
+                                    isAwaiting,
+                                    isInProgress,
+                                    isUpcoming,
+                                    isEnded,
+                                    isWindowActive,
+                                    passThreshold,
+                                    totalScore,
+                                    maxScore,
+                                    scorePct,
+                                    isPass,
+                                  } = item;
+
+                                  return (
+                                    <tr key={exam.id} className="hover:bg-[#fbfbfb] transition-colors">
+                                      {/* Assessment & Course */}
+                                      <td className="py-4 px-5">
+                                        <span className="font-serif text-base font-bold text-[#111111] block mb-0.5">
+                                          {exam.title}
+                                        </span>
+                                        <div className="flex items-center gap-2 mt-0.5">
+                                          <span className="font-mono text-[10px] uppercase font-bold text-brand-crimson tracking-wider">
+                                            {exam.class_name}
+                                          </span>
+                                        </div>
+                                      </td>
+
+                                      {/* Window Schedule / Submission */}
+                                      <td className="py-4 px-5 font-mono text-xs text-neutral-600">
+                                        {isSubmitted && exam.attempt?.completed_at ? (
+                                          <div>
+                                            <span className="block font-bold text-[#111111]">
+                                              Submitted: {new Date(exam.attempt.completed_at).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
+                                            </span>
+                                            <span className="text-[10px] text-neutral-500">
+                                              {new Date(exam.attempt.completed_at).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" })}
+                                            </span>
+                                          </div>
+                                        ) : (
+                                          formatScheduleWindow(exam.start_time, exam.end_time)
+                                        )}
+                                      </td>
+
+                                      {/* Specifications & Benchmark */}
+                                      <td className="py-4 px-5 font-mono text-xs">
+                                        <div className="flex flex-col gap-0.5">
+                                          <span className="font-bold text-[#111111]">
+                                            {exam.total_marks} TOTAL MARKS
+                                          </span>
+                                          <span className="text-neutral-500 text-[10px]">
+                                            {exam.duration_minutes} MINS • {(exam.difficulty || "MEDIUM").toUpperCase()}
+                                          </span>
+                                          <span className="text-blue-700 text-[10px] font-bold">
+                                            PASS REQ: {passThreshold}% (≥ {((exam.total_marks * passThreshold) / 100).toFixed(1)} pts)
+                                          </span>
+                                        </div>
+                                      </td>
+
+                                      {/* Status / Rating */}
+                                      <td className="py-4 px-5 text-center">
+                                        {isGraded ? (
+                                          <div className="flex flex-col items-center gap-1">
+                                            <div className="flex items-baseline gap-1">
+                                              <span className="font-serif text-base font-bold text-primary">
+                                                {totalScore}
+                                              </span>
+                                              <span className="font-mono text-xs text-secondary font-bold">
+                                                / {maxScore}
+                                              </span>
+                                              <span className="font-mono text-xs text-neutral-600 ml-1 font-bold">
+                                                ({scorePct}%)
+                                              </span>
+                                            </div>
+                                            <span
+                                              className={`px-2.5 py-0.5 font-mono text-[10px] font-bold uppercase tracking-wider ${
+                                                isPass
+                                                  ? "bg-[#005430] text-white"
+                                                  : "bg-[#ba1a1a] text-white"
+                                              }`}
+                                            >
+                                              {isPass ? "PASS" : "FAIL"}
+                                            </span>
+                                          </div>
+                                        ) : isAwaiting ? (
+                                          <div className="inline-flex flex-col items-center">
+                                            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-amber-100 text-amber-900 border border-amber-300 font-mono text-[10px] font-bold uppercase tracking-wider">
+                                              <span className="material-symbols-outlined text-[13px] animate-spin">
+                                                sync
+                                              </span>
+                                              IN REVIEW
+                                            </span>
+                                            <span className="font-mono text-[9px] text-neutral-500 mt-0.5">
+                                              Pending publication
+                                            </span>
+                                          </div>
+                                        ) : isInProgress ? (
+                                          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-brand-crimson text-white font-mono text-[10px] font-bold uppercase tracking-wider">
+                                            <span className="w-1.5 h-1.5 bg-white animate-pulse rounded-full" />
+                                            IN PROGRESS
+                                          </span>
+                                        ) : isWindowActive ? (
+                                          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-[#005430] text-white font-mono text-[10px] font-bold uppercase tracking-wider">
+                                            <span className="w-1.5 h-1.5 bg-[#7afbb1] rounded-full" />
+                                            WINDOW ACTIVE
+                                          </span>
+                                        ) : isUpcoming ? (
+                                          <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-[#eeeeee] text-neutral-600 font-mono text-[10px] font-bold uppercase tracking-wider">
+                                            <span className="material-symbols-outlined text-[12px]">schedule</span>
+                                            SCHEDULED
+                                          </span>
+                                        ) : (
+                                          <span className="px-2.5 py-1 bg-[#eeeeee] text-neutral-600 font-mono text-[10px] font-bold uppercase tracking-wider">
+                                            WINDOW CLOSED
+                                          </span>
+                                        )}
+                                      </td>
+
+                                      {/* Action */}
+                                      <td className="py-4 px-5 text-right">
+                                        {isGraded ? (
+                                          <a
+                                            href={`/student/exams/${exam.id}/result`}
+                                            className="inline-flex items-center gap-1.5 px-4 py-2 bg-black hover:bg-brand-crimson text-white font-mono text-[11px] font-bold uppercase tracking-wider transition-colors border border-black shadow-[2px_2px_0px_#111111]"
+                                          >
+                                            <span>VIEW TRANSCRIPT</span>
+                                            <span>→</span>
+                                          </a>
+                                        ) : isAwaiting ? (
+                                          <a
+                                            href={`/student/exams/${exam.id}/submitted`}
+                                            className="inline-flex items-center gap-1.5 px-3.5 py-1.5 border border-black text-[#111111] hover:bg-black hover:text-white font-mono text-[11px] font-bold uppercase tracking-wider transition-colors"
+                                          >
+                                            <span>RECEIPT</span>
+                                          </a>
+                                        ) : isInProgress ? (
+                                          <a
+                                            href={`/student/exams/${exam.id}/attempt`}
+                                            className="inline-flex items-center gap-1.5 px-4 py-2 bg-brand-crimson hover:bg-black text-white font-mono text-[11px] font-bold uppercase tracking-wider transition-colors border border-black shadow-[2px_2px_0px_#111111]"
+                                          >
+                                            <span>RESUME</span>
+                                            <span>→</span>
+                                          </a>
+                                        ) : isWindowActive ? (
+                                          <a
+                                            href={`/student/exams/${exam.id}`}
+                                            className="inline-flex items-center gap-1.5 px-4 py-2 bg-[#111111] hover:bg-brand-crimson text-white font-mono text-[11px] font-bold uppercase tracking-wider transition-colors border border-black shadow-[2px_2px_0px_#111111]"
+                                          >
+                                            <span>BEGIN EXAM</span>
+                                            <span>→</span>
+                                          </a>
+                                        ) : isUpcoming ? (
+                                          <a
+                                            href={`/student/exams/${exam.id}`}
+                                            className="inline-flex items-center gap-1.5 px-3.5 py-1.5 border border-black text-[#111111] hover:bg-black hover:text-white font-mono text-[11px] font-bold uppercase tracking-wider transition-colors"
+                                          >
+                                            <span>BRIEFING</span>
+                                          </a>
+                                        ) : (
+                                          <span className="font-mono text-[11px] text-neutral-400 uppercase font-semibold">
+                                            CLOSED
+                                          </span>
+                                        )}
+                                      </td>
+                                    </tr>
+                                  );
+                                })}
+                              </tbody>
+                            </table>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })()}
+                </div>
+              )}
+
             </div>
           </div>
         </main>
@@ -1347,23 +1848,7 @@ function StudentClassWorkspaceView({
     }
   };
 
-  const formatScheduleWindow = (startStr?: string, endStr?: string) => {
-    if (!startStr && !endStr) return "Open Window (No Restrictions)";
-    const opts: Intl.DateTimeFormatOptions = {
-      day: "numeric",
-      month: "short",
-      year: "numeric",
-      hour: "numeric",
-      minute: "2-digit",
-      hour12: true,
-    };
-    if (startStr && endStr) {
-      return `${new Date(startStr).toLocaleString("en-US", opts)} — ${new Date(endStr).toLocaleString("en-US", opts)}`;
-    }
-    if (startStr) return `Opens ${new Date(startStr).toLocaleString("en-US", opts)}`;
-    if (endStr) return `Ends ${new Date(endStr).toLocaleString("en-US", opts)}`;
-    return "Open Window";
-  };
+
 
   const formatSubmissionDate = (completedStr?: string | null, startedStr?: string | null) => {
     if (!completedStr) return "";
@@ -1527,13 +2012,14 @@ function StudentClassWorkspaceView({
                   const isInProgress = exam.attempt && exam.attempt.status === "in_progress";
 
                   const now = new Date();
-                  const start = exam.start_time ? new Date(exam.start_time) : null;
-                  const end = exam.end_time ? new Date(exam.end_time) : null;
+                  const start = parseUtcDate(exam.start_time);
+                  const end = parseUtcDate(exam.end_time);
                   const isUpcoming = Boolean(start && now < start && !isSubmitted && !isInProgress);
                   const isEnded = Boolean(end && now > end && !isSubmitted && !isInProgress);
 
+                  const isResultPublished = Boolean(exam.attempt?.result_published_at);
                   const hasScore =
-                    exam.attempt?.total_marks !== undefined && exam.attempt?.total_marks !== null;
+                    isResultPublished && exam.attempt?.total_marks !== undefined && exam.attempt?.total_marks !== null;
                   const rawScore = hasScore ? Number(exam.attempt!.total_marks) : 0;
                   const adjScore = Number(exam.attempt?.adjustment_marks || 0);
                   const scoreVal = hasScore ? Math.max(0, rawScore + adjScore) : null;
@@ -1586,24 +2072,50 @@ function StudentClassWorkspaceView({
 
                         {/* Grade Badge / Numerical Result OR Weightage */}
                         {isSubmitted ? (
-                          <div className="flex flex-col items-end bg-surface-container-low border border-outline-variant px-6 py-4">
-                            <span className="font-sans text-[10px] text-secondary uppercase tracking-widest font-bold mb-1">
-                              Automated Score
-                            </span>
-                            <div className="flex items-baseline gap-2">
-                              <span className="font-serif text-4xl text-primary font-bold">
-                                {scoreVal !== null ? scoreVal : "—"}
+                          isResultPublished ? (
+                            <div className="flex flex-col items-end bg-surface-container-low border border-outline-variant px-6 py-4">
+                              <span className="font-sans text-[10px] text-secondary uppercase tracking-widest font-bold mb-1">
+                                Official Score
                               </span>
-                              <span className="font-sans text-xl font-bold text-secondary">
-                                / {exam.total_marks}
-                              </span>
-                              {scorePct !== null && (
-                                <span className="ml-2 px-2 py-0.5 bg-black text-white font-sans text-[11px] font-bold tracking-widest">
-                                  {scorePct}%
+                              <div className="flex items-baseline gap-2">
+                                <span className="font-serif text-4xl text-primary font-bold">
+                                  {scoreVal !== null ? scoreVal : "—"}
                                 </span>
-                              )}
+                                <span className="font-sans text-xl font-bold text-secondary">
+                                  / {exam.total_marks}
+                                </span>
+                                {scorePct !== null && (
+                                  <>
+                                    <span className="ml-2 px-2 py-0.5 bg-black text-white font-sans text-[11px] font-bold tracking-widest">
+                                      {scorePct}%
+                                    </span>
+                                    {(() => {
+                                      const passPct = exam.passing_percentage ?? 40.0;
+                                      const isPass = scorePct >= passPct;
+                                      return (
+                                        <span
+                                          className={`ml-1 px-2 py-0.5 font-mono text-[10px] font-bold uppercase tracking-wider ${
+                                            isPass ? "bg-[#005430] text-white" : "bg-primary text-white"
+                                          }`}
+                                        >
+                                          {isPass ? "PASS" : "FAIL"}
+                                        </span>
+                                      );
+                                    })()}
+                                  </>
+                                )}
+                              </div>
                             </div>
-                          </div>
+                          ) : (
+                            <div className="flex flex-col items-end bg-surface-container-low border border-outline-variant px-5 py-3">
+                              <span className="font-sans text-[10px] text-secondary uppercase tracking-widest font-bold mb-1">
+                                Evaluation Status
+                              </span>
+                              <span className="font-mono text-xs font-bold text-on-surface uppercase tracking-wider">
+                                AWAITING INSTRUCTOR PUBLICATION
+                              </span>
+                            </div>
+                          )
                         ) : (
                           <div className="flex flex-col items-end bg-surface-container-low border border-outline-variant px-5 py-3">
                             <span className="font-sans text-[10px] text-secondary uppercase tracking-widest font-bold">
@@ -1699,13 +2211,24 @@ function StudentClassWorkspaceView({
                       {/* Primary Call to Action */}
                       <div className="flex flex-col sm:flex-row items-center justify-between gap-4 pt-2">
                         {isSubmitted ? (
-                          <a
-                            href={`/student/exams/${exam.id}/result`}
-                            className="w-full sm:w-auto inline-flex items-center justify-center gap-3 px-8 py-3.5 bg-black hover:bg-primary text-white font-sans text-xs font-bold tracking-widest uppercase transition-colors"
-                          >
-                            <span>VIEW RESULT &amp; TEST DIAGNOSTICS</span>
-                            <span className="font-bold text-sm">→</span>
-                          </a>
+                          isResultPublished ? (
+                            <a
+                              href={`/student/exams/${exam.id}/result`}
+                              className="w-full sm:w-auto inline-flex items-center justify-center gap-3 px-8 py-3.5 bg-black hover:bg-primary text-white font-sans text-xs font-bold tracking-widest uppercase transition-colors"
+                            >
+                              <span>VIEW RESULT &amp; TEST DIAGNOSTICS</span>
+                              <span className="font-bold text-sm">→</span>
+                            </a>
+                          ) : (
+                            <button
+                              disabled
+                              type="button"
+                              className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-8 py-3.5 border border-outline-variant bg-surface-container text-secondary font-sans text-xs font-bold tracking-widest uppercase cursor-not-allowed opacity-75"
+                            >
+                              <span className="material-symbols-outlined text-[16px]">hourglass_top</span>
+                              <span>AWAITING INSTRUCTOR PUBLICATION</span>
+                            </button>
+                          )
                         ) : isInProgress ? (
                           <a
                             href={`/student/exams/${exam.id}/attempt`}

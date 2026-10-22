@@ -28,6 +28,7 @@ def get_blueprint(exam_id: str) -> BlueprintResponse | None:
         exam_id=exam_id,
         total_marks=total_marks,
         version=blueprint.get("version", 1),
+        passing_percentage=float(blueprint.get("passing_percentage", 40.0)),
         sections=sections
     )
 
@@ -58,9 +59,12 @@ def create_or_update_blueprint(exam_id: str, blueprint_data: BlueprintCreate) ->
 
     new_version = existing.get("version", 0) + 1 if existing else 1
     
+    pass_pct = float(blueprint_data.passing_percentage if blueprint_data.passing_percentage is not None else 40.0)
+    
     doc = {
         "exam_id": exam_id,
         "total_marks": total_marks,
+        "passing_percentage": pass_pct,
         "sections": sections_doc,
         "version": new_version,
         "updated_at": datetime.utcnow()
@@ -81,4 +85,3 @@ def create_or_update_blueprint(exam_id: str, blueprint_data: BlueprintCreate) ->
 def validate_blueprint_marks(blueprint_data: BlueprintCreate, exam_total_marks: int) -> bool:
     calculated_total = sum(sec.count * sec.marks_each for sec in blueprint_data.sections)
     return calculated_total == exam_total_marks
-

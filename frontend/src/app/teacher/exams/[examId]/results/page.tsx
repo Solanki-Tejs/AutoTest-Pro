@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { getStoredToken } from "@/app/lib/auth";
 import Modal from "@/app/components/Modal";
 import { toast } from "sonner";
-import { API_BASE_URL } from "@/app/lib/apiConfig";
+import { API_BASE_URL, getAssetUrl } from "@/app/lib/apiConfig";
 
 interface StackedAlert {
   key: string;
@@ -15,6 +15,7 @@ interface StackedAlert {
   timestamps: string[];
   lastTimestamp: string;
   snapshotUrl?: string;
+  audioUrl?: string;
 }
 
 function groupAlerts(events: any[]): StackedAlert[] {
@@ -37,7 +38,8 @@ function groupAlerts(events: any[]): StackedAlert[] {
       desc = `Proctoring alert: ${type.replace(/_/g, " ")}`;
     }
 
-    const snapshot = ev.details?.snapshot_url || ev.snapshot_url;
+    const snapshot = ev.details?.snapshot_url || ev.snapshot_url || ev.details?.metadata?.snapshot_url;
+    const audio = ev.details?.audio_url || ev.audio_url || ev.details?.metadata?.audio_url;
     const ts = ev.timestamp || "";
 
     const key = `${type.toUpperCase()}:::${desc.toLowerCase()}`;
@@ -51,6 +53,7 @@ function groupAlerts(events: any[]): StackedAlert[] {
         timestamps: ts ? [ts] : [],
         lastTimestamp: ts,
         snapshotUrl: snapshot,
+        audioUrl: audio,
       });
     } else {
       const item = map.get(key)!;
@@ -61,6 +64,9 @@ function groupAlerts(events: any[]): StackedAlert[] {
       }
       if (snapshot && !item.snapshotUrl) {
         item.snapshotUrl = snapshot;
+      }
+      if (audio && !item.audioUrl) {
+        item.audioUrl = audio;
       }
     }
   }
@@ -210,7 +216,8 @@ export default function ExamResultsPage(props: { params: Promise<{ examId: strin
       const adjMarks = a.adjustment_marks !== null ? Number(a.adjustment_marks) : 0;
       const finalMarks = evalMarks + adjMarks;
       const maxMarks = a.max_marks || exam?.total_marks || 100;
-      const isPass = maxMarks > 0 ? finalMarks / maxMarks >= 0.4 : false;
+      const passPct = exam?.passing_percentage !== undefined && exam?.passing_percentage !== null ? Number(exam.passing_percentage) : 40.0;
+      const isPass = maxMarks > 0 ? (finalMarks / maxMarks) >= (passPct / 100) : false;
       const violationCount = a.cheating_summary?.events?.length || 0;
 
       if (selectedCols.includes("student")) row.push(`"${a.student_name || ""} (${a.student_email || ""})"`);
@@ -263,10 +270,13 @@ export default function ExamResultsPage(props: { params: Promise<{ examId: strin
   const evaluatedCount = evaluatedAttempts.length;
   const evalPct = totalSubmissions > 0 ? Math.round((evaluatedCount / totalSubmissions) * 100) : 0;
 
+  const passThresholdPct = exam?.passing_percentage !== undefined && exam?.passing_percentage !== null ? Number(exam.passing_percentage) : 40.0;
+  const passThresholdFraction = passThresholdPct / 100;
+
   const passingCount = evaluatedAttempts.filter((a) => {
     const finalMarks = (a.total_marks || 0) + (a.adjustment_marks || 0);
     const maxMarks = a.max_marks || exam?.total_marks || 100;
-    return maxMarks > 0 && finalMarks / maxMarks >= 0.4;
+    return maxMarks > 0 && (finalMarks / maxMarks) >= passThresholdFraction;
   }).length;
   const deficientCount = evaluatedCount - passingCount;
   const passingPct = evaluatedCount > 0 ? Math.round((passingCount / evaluatedCount) * 100) : 0;
@@ -455,7 +465,7 @@ export default function ExamResultsPage(props: { params: Promise<{ examId: strin
                 PASSING CANDIDATES
               </span>
               <span className="font-mono text-[10px] px-1.5 py-0.5 bg-[#ffdad6] text-[#93000a] font-bold">
-                THRESHOLD 40%
+                THRESHOLD {passThresholdPct}%
               </span>
             </div>
             <div className="flex items-baseline justify-between mt-auto">
@@ -616,7 +626,7 @@ export default function ExamResultsPage(props: { params: Promise<{ examId: strin
                     const finalMarks = evalMarks + adjMarks;
                     const maxMarks = a.max_marks || exam?.total_marks || 100;
                     const netPct = maxMarks > 0 ? ((finalMarks / maxMarks) * 100).toFixed(1) : "0.0";
-                    const isPass = maxMarks > 0 ? (finalMarks / maxMarks) >= 0.4 : false;
+                    const isPass = maxMarks > 0 ? (finalMarks / maxMarks) >= passThresholdFraction : false;
                     const violationCount = a.cheating_summary?.events?.length || 0;
                     const isEvaluated = a.status === "evaluated";
 
@@ -869,6 +879,34 @@ export default function ExamResultsPage(props: { params: Promise<{ examId: strin
                   <p className="text-xs text-on-surface font-sans leading-relaxed">
                     {alert.description}
                   </p>
+
+                  {alert.snapshotUrl && (
+                    <div className="mt-1">
+                      <span className="font-mono text-[9px] uppercase font-bold text-secondary block mb-1">
+                        Surveillance Photo Snapshot Evidence:
+                      </span>
+                      <img
+                        src={getAssetUrl(alert.snapshotUrl)}
+                        alt="Violation snapshot"
+                        className="w-full max-h-48 object-contain border border-black bg-black"
+                        loading="lazy"
+                      />
+                    </div>
+                  )}
+
+                  {alert.audioUrl && (
+                    <div className="mt-1 p-2 bg-black/5 border border-black/20">
+                      <span className="font-mono text-[9px] uppercase font-bold text-secondary block mb-1 flex items-center gap-1">
+                        <span className="material-symbols-outlined text-[13px]">volume_up</span>
+                        Acoustic Incident Audio Recording:
+                      </span>
+                      <audio
+                        controls
+                        src={getAssetUrl(alert.audioUrl)}
+                        className="w-full h-8 mt-1"
+                      />
+                    </div>
+                  )}
 
                   {alert.timestamps.length > 1 && (
                     <details className="mt-1 font-mono text-[10px] text-secondary group">

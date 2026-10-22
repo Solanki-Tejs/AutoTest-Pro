@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks, UploadFile, File
+from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks, UploadFile, File, Form
 from sqlalchemy.orm import Session
 from typing import Dict, Any, List
 from databases.database import get_db
@@ -154,3 +154,32 @@ def report_browser_violation(
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+
+@router.post("/{exam_id}/attempts/{attempt_id}/proctoring/audio")
+def upload_proctoring_audio(
+    exam_id: str,
+    attempt_id: str,
+    audio: UploadFile = File(...),
+    duration: float = Form(5.0),
+    peak_rms: float = Form(0.0),
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(require_roles("student"))
+):
+    try:
+        attempt = student_exam_service.get_student_attempt(int(current_user["sub"]), exam_id, db)
+        if str(attempt["id"]) != attempt_id:
+            raise HTTPException(status_code=403, detail="Attempt ID mismatch")
+        if attempt["completed_at"]:
+            raise HTTPException(status_code=400, detail="Exam already completed")
+
+        return proctoring_service.save_audio_violation(
+            int(current_user["sub"]),
+            exam_id,
+            attempt_id,
+            audio,
+            duration,
+            peak_rms
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+

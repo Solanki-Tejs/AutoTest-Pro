@@ -78,7 +78,6 @@ def update_exam(exam_id: str, exam_data: ExamUpdate, db: Session = Depends(get_d
     return updated_exam
 
 from services import exam_publish_service
-from services.audit_service import log_audit_event
 
 @router.post("/{exam_id}/publish", response_model=ExamResponse)
 def publish_exam(exam_id: str, payload: ExamPublishRequest, db: Session = Depends(get_db), current_user: dict = Depends(get_current_user)):
@@ -151,6 +150,8 @@ def save_exam_blueprint(exam_id: str, blueprint_data: BlueprintCreate, db: Sessi
         
     try:
         blueprint = exam_blueprint_service.create_or_update_blueprint(exam_id, blueprint_data)
+        if blueprint_data.passing_percentage is not None:
+            exam_service.update_exam(exam_id, {"passing_percentage": blueprint_data.passing_percentage}, db)
         log_audit_event(user_id, "BLUEPRINT_SAVED", "BLUEPRINT", exam_id, {"version": blueprint.version})
         return blueprint
     except ValueError as e:

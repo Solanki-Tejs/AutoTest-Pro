@@ -22,8 +22,18 @@ def ensure_tables(db: Session):
             start_time TIMESTAMP NULL,
             end_time TIMESTAMP NULL,
             status VARCHAR(20) NOT NULL DEFAULT 'draft',
-            created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+            created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+            passing_percentage NUMERIC(5, 2) DEFAULT 40.0
         )
+    """))
+    db.execute(text("""
+        DO $$
+        BEGIN
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='exams' AND column_name='passing_percentage') THEN
+                ALTER TABLE exams ADD COLUMN passing_percentage NUMERIC(5, 2) DEFAULT 40.0;
+            END IF;
+        END
+        $$;
     """))
     db.commit()
     _tables_ensured = True
@@ -31,11 +41,12 @@ def ensure_tables(db: Session):
 
 def create_exam(exam_data: ExamCreate, db: Session) -> dict:
     ensure_tables(db)
+    pass_pct = exam_data.passing_percentage if exam_data.passing_percentage is not None else 40.0
     
     query = text("""
-        INSERT INTO exams (class_id, title, total_marks, duration_minutes, difficulty, selected_pdf_ids, start_time, end_time)
-        VALUES (:class_id, :title, :total_marks, :duration_minutes, :difficulty, CAST(:selected_pdf_ids AS uuid[]), :start_time, :end_time)
-        RETURNING id, class_id, title, total_marks, duration_minutes, difficulty, selected_pdf_ids, start_time, end_time, status, created_at
+        INSERT INTO exams (class_id, title, total_marks, duration_minutes, difficulty, selected_pdf_ids, start_time, end_time, passing_percentage)
+        VALUES (:class_id, :title, :total_marks, :duration_minutes, :difficulty, CAST(:selected_pdf_ids AS uuid[]), :start_time, :end_time, :passing_percentage)
+        RETURNING id, class_id, title, total_marks, duration_minutes, difficulty, selected_pdf_ids, start_time, end_time, status, created_at, passing_percentage
     """)
     
     result = db.execute(query, {
@@ -46,7 +57,8 @@ def create_exam(exam_data: ExamCreate, db: Session) -> dict:
         "difficulty": exam_data.difficulty,
         "selected_pdf_ids": [str(pdf_id) for pdf_id in exam_data.selected_pdf_ids],
         "start_time": exam_data.start_time,
-        "end_time": exam_data.end_time
+        "end_time": exam_data.end_time,
+        "passing_percentage": pass_pct
     })
     
     row = result.mappings().one()
@@ -57,7 +69,7 @@ def create_exam(exam_data: ExamCreate, db: Session) -> dict:
 def get_exams_by_teacher(teacher_id: int, db: Session) -> list[dict]:
     ensure_tables(db)
     query = text("""
-        SELECT e.id, e.class_id, e.title, e.total_marks, e.duration_minutes, e.difficulty, e.selected_pdf_ids, e.start_time, e.end_time, e.status, e.created_at, c.name as class_name
+        SELECT e.id, e.class_id, e.title, e.total_marks, e.duration_minutes, e.difficulty, e.selected_pdf_ids, e.start_time, e.end_time, e.status, e.created_at, COALESCE(e.passing_percentage, 40.0) as passing_percentage, c.name as class_name
         FROM exams e
         JOIN classes c ON e.class_id = c.id
         WHERE c.teacher_id = :teacher_id
@@ -70,7 +82,7 @@ def get_exams_by_teacher(teacher_id: int, db: Session) -> list[dict]:
 def get_exam_by_id(exam_id: str, db: Session) -> dict | None:
     ensure_tables(db)
     query = text("""
-        SELECT e.id, e.class_id, e.title, e.total_marks, e.duration_minutes, e.difficulty, e.selected_pdf_ids, e.start_time, e.end_time, e.status, e.created_at
+        SELECT e.id, e.class_id, e.title, e.total_marks, e.duration_minutes, e.difficulty, e.selected_pdf_ids, e.start_time, e.end_time, e.status, e.created_at, COALESCE(e.passing_percentage, 40.0) as passing_percentage
         FROM exams e
         WHERE e.id = :exam_id
     """)
@@ -79,7 +91,7 @@ def get_exam_by_id(exam_id: str, db: Session) -> dict | None:
     return dict(row) if row else None
 
 
-def update_exam(exam_id: str, exam_data: ExamUpdate, db: Session) -> dict | None:
+def update_exam(exam_id: str, exam_data: ExamUpdate | dict, db: Session) -> dict | None:
     ensure_tables(db)
     # Build dynamic update query
     updates = []
@@ -101,7 +113,7 @@ def update_exam(exam_id: str, exam_data: ExamUpdate, db: Session) -> dict | None
         UPDATE exams
         SET {", ".join(updates)}
         WHERE id = :exam_id
-        RETURNING id, class_id, title, total_marks, duration_minutes, difficulty, selected_pdf_ids, start_time, end_time, status, created_at
+        RETURNING id, class_id, title, total_marks, duration_minutes, difficulty, selected_pdf_ids, start_time, end_time, status, created_at, COALESCE(passing_percentage, 40.0) as passing_percentage
     """)
     
     result = db.execute(query, params)
@@ -131,7 +143,7 @@ def teacher_can_access_exam(teacher_id: int, exam_id: str, db: Session) -> bool:
 def get_published_exams_for_student(student_id: int, class_id: int, db: Session) -> list[dict]:
     ensure_tables(db)
     query = text("""
-        SELECT e.id, e.class_id, e.title, e.total_marks, e.duration_minutes, e.difficulty, e.start_time, e.end_time, e.status, e.created_at
+        SELECT e.id, e.class_id, e.title, e.total_marks, e.duration_minutes, e.difficulty, e.start_time, e.end_time, e.status, e.created_at, COALESCE(e.passing_percentage, 40.0) as passing_percentage
         FROM exams e
         JOIN class_enrollments cm ON e.class_id = cm.class_id
         WHERE e.class_id = :class_id 

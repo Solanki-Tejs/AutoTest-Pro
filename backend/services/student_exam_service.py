@@ -115,6 +115,18 @@ def get_student_exams(student_id: int, db: Session) -> List[Dict[str, Any]]:
     exams = []
     for row in result.mappings():
         exam_dict = dict(row)
+        if exam_dict.get('attempt'):
+            att = exam_dict['attempt']
+            if not att.get('result_published_at'):
+                att['total_marks'] = None
+                att['max_marks'] = None
+                att['adjustment_marks'] = None
+        for t_field in ['start_time', 'end_time', 'created_at']:
+            if exam_dict.get(t_field) and isinstance(exam_dict[t_field], datetime):
+                dt = exam_dict[t_field]
+                if dt.tzinfo is None:
+                    dt = dt.replace(tzinfo=timezone.utc)
+                exam_dict[t_field] = dt.isoformat()
         exams.append(exam_dict)
     return exams
 

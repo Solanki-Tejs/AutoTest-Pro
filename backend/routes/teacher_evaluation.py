@@ -72,6 +72,11 @@ def get_attempt_evaluation(attempt_id: str, db: Session = Depends(get_db), curre
         raise HTTPException(status_code=404, detail="Submission not found")
         
     answers = submission.get("answers", [])
+
+    paper_doc = mongo_db.exam_attempt_papers.find_one({"attempt_id": str(attempt_id)})
+    assigned_qids = set(paper_doc.get("assigned_question_ids", [])) if paper_doc and paper_doc.get("assigned_question_ids") else None
+    if assigned_qids is not None:
+        answers = [ans for ans in answers if ans.get("question_id") in assigned_qids]
     
     from services.question_bank_service import get_active_question_bank
     qb = get_active_question_bank(exam_id)

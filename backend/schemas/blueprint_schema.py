@@ -15,10 +15,12 @@ class SectionResponse(SectionCreate):
 
 class BlueprintCreate(BaseModel):
     version: Optional[int] = None
+    passing_percentage: Optional[float] = Field(default=40.0, ge=1.0, le=100.0)
     sections: List[SectionCreate]
 
 class BlueprintResponse(BaseModel):
     exam_id: str
     total_marks: int
     version: int = 1
+    passing_percentage: float = 40.0
     sections: List[SectionResponse]

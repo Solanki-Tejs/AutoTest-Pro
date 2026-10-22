@@ -23,6 +23,7 @@ export default function ExamBlueprintPage() {
   const [error, setError] = useState("");
   const [dbBlueprintMarks, setDbBlueprintMarks] = useState<number | null>(null);
   const [isPaperApproved, setIsPaperApproved] = useState(false);
+  const [passingPercentage, setPassingPercentage] = useState<number>(40);
 
   useEffect(() => {
     const u = getStoredUser();
@@ -47,6 +48,8 @@ export default function ExamBlueprintPage() {
         setExam(exm);
         setSections(blp.sections || []);
         setVersion(blp.version || 1);
+        const loadedPassPct = blp.passing_percentage ?? exm.passing_percentage ?? 40;
+        setPassingPercentage(Number(loadedPassPct));
         const paperApproved = exm.status === "ready" || exm.status === "published" || qb?.status === "approved";
         setIsPaperApproved(paperApproved);
 
@@ -73,7 +76,7 @@ export default function ExamBlueprintPage() {
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const debouncedSave = useCallback(
-    debounce(async (secs: Section[], currentMarks: number, t: string, v: number) => {
+    debounce(async (secs: Section[], currentMarks: number, t: string, v: number, passPct?: number) => {
       if (isLocked) return;
       const hasInvalidNumeric = secs.some(sec => {
         const c = parseInt(String(sec.count));
@@ -91,7 +94,7 @@ export default function ExamBlueprintPage() {
       }
       setSaveStatus("saving");
       try {
-        const newBlp = await saveExamBlueprint(t, examId, secs, v);
+        const newBlp = await saveExamBlueprint(t, examId, secs, v, passPct ?? passingPercentage);
         setVersion(newBlp.version || 1);
         setDbBlueprintMarks(currentMarks);
         setSaveStatus("saved");
@@ -113,7 +116,7 @@ export default function ExamBlueprintPage() {
     setSections(newSections);
     const newMarks = newSections.reduce((acc, sec) => acc + ((parseInt(String(sec.count)) || 0) * (parseInt(String(sec.marks_each)) || 0)), 0);
     if (token) {
-      debouncedSave(newSections, newMarks, token, version);
+      debouncedSave(newSections, newMarks, token, version, passingPercentage);
     }
   };
 
@@ -149,7 +152,7 @@ export default function ExamBlueprintPage() {
 
     setSaveStatus("saving");
     try {
-      const newBlp = await saveExamBlueprint(token, examId, sections, version);
+      const newBlp = await saveExamBlueprint(token, examId, sections, version, passingPercentage);
       setVersion(newBlp.version || 1);
       const { generatePaper } = await import("@/app/lib/exams");
       await generatePaper(token, examId);
@@ -444,6 +447,82 @@ export default function ExamBlueprintPage() {
                   </span>
                   <span className="text-on-surface font-bold capitalize">{exam.difficulty}</span>
                 </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="bg-surface-container-lowest border border-black shadow-[3px_3px_0px_#111111] p-6">
+            <div className="flex items-center justify-between pb-2 mb-3 border-b border-black">
+              <h3 className="font-serif text-lg font-bold text-on-surface">
+                Passing Benchmark
+              </h3>
+              <span className="font-mono text-xs font-bold px-2 py-0.5 bg-[#0047ff] text-white">
+                {passingPercentage}%
+              </span>
+            </div>
+
+            <p className="font-sans text-xs text-secondary mb-4 leading-relaxed">
+              Establish the minimum percentage required for candidates to receive an accredited Pass rating.
+            </p>
+
+            <div className="grid grid-cols-4 gap-2 mb-4">
+              {[33, 40, 50, 60].map((pct) => (
+                <button
+                  key={pct}
+                  type="button"
+                  disabled={isLocked}
+                  onClick={() => {
+                    setPassingPercentage(pct);
+                    if (token) debouncedSave(sections, configuredMarks, token, version, pct);
+                  }}
+                  className={`py-1.5 font-mono text-xs font-bold border border-black transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed ${
+                    passingPercentage === pct
+                      ? "bg-black text-white shadow-[2px_2px_0px_#111111]"
+                      : "bg-surface hover:bg-surface-container text-on-surface"
+                  }`}
+                >
+                  {pct}%
+                </button>
+              ))}
+            </div>
+
+            <div className="mb-4">
+              <label className="block font-mono text-[10px] uppercase tracking-wider text-secondary font-bold mb-1.5">
+                Custom Passing Threshold (%)
+              </label>
+              <div className="relative">
+                <input
+                  type="number"
+                  min="1"
+                  max="100"
+                  step="1"
+                  value={passingPercentage}
+                  disabled={isLocked}
+                  onChange={(e) => {
+                    const val = Math.min(100, Math.max(1, parseFloat(e.target.value) || 0));
+                    setPassingPercentage(val);
+                    if (token) debouncedSave(sections, configuredMarks, token, version, val);
+                  }}
+                  className="w-full px-3 py-2 bg-surface border border-black focus:border-[#0047ff] outline-none font-mono text-sm font-bold disabled:opacity-50 pr-8"
+                />
+                <span className="absolute right-3 top-2.5 font-mono text-xs text-secondary font-bold pointer-events-none">
+                  %
+                </span>
+              </div>
+            </div>
+
+            <div className="p-3 bg-surface border border-outline-variant/60 font-mono text-xs text-secondary">
+              <div className="flex justify-between items-center mb-1">
+                <span>Passing Threshold:</span>
+                <span className="font-bold text-on-surface">
+                  {((examTotal * passingPercentage) / 100).toFixed(1)} / {examTotal} marks
+                </span>
+              </div>
+              <div className="flex justify-between items-center text-[11px]">
+                <span>Rating:</span>
+                <span className="text-[#005430] font-bold">
+                  ≥ {passingPercentage}% = PASS
+                </span>
               </div>
             </div>
           </div>

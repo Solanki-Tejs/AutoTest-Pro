@@ -189,6 +189,8 @@ export default function ExamResultPage() {
   const maxMarks =
     result.max_marks || exam.total_marks || allQuestions.reduce((acc, q) => acc + q.mark, 0) || 1;
   const percentage = maxMarks > 0 ? Math.round((totalScore / maxMarks) * 100) : 0;
+  const passThreshold = exam?.passing_percentage !== undefined && exam?.passing_percentage !== null ? Number(exam.passing_percentage) : 40.0;
+  const isPassed = percentage >= passThreshold;
   const correctRatio = totalQuestions > 0 ? Math.round((correctCount / totalQuestions) * 100) : 0;
 
   // Candidate Result Analytics
@@ -473,7 +475,7 @@ export default function ExamResultPage() {
                       <span className="font-label-caps-lg tracking-widest uppercase text-on-primary bg-primary-dark px-2 py-0.5">
                         {percentage}% Overall Mark
                       </span>
-                      <span className="font-label-caps-sm text-on-primary/80">Threshold: 60.0%</span>
+                      <span className="font-label-caps-sm text-on-primary/80">Threshold: {passThreshold.toFixed(1)}%</span>
                     </div>
                   </div>
                   <div className="pt-6 bg-primary-dark/40 -mx-8 -mb-8 md:-mx-10 md:-mb-10 p-6 md:p-8">
@@ -515,15 +517,15 @@ export default function ExamResultPage() {
                         <span className="font-label-caps-sm text-secondary uppercase block mb-1">Outcome Status</span>
                         <span
                           className={`font-label-caps-sm uppercase font-bold block mt-1 ${
-                            percentage >= 60 ? "text-green-700" : "text-primary"
+                            isPassed ? "text-green-700" : "text-primary"
                           }`}
                         >
-                          {percentage >= 60 ? "Passed" : "Review Req."}
+                          {isPassed ? "Passed" : "Failed"}
                         </span>
                         <span className="font-mono-field text-secondary text-[11px]">
-                          {percentage >= 60
+                          {isPassed
                             ? "+above passing grade"
-                            : `-${Math.max(1, Math.round(maxMarks * 0.6 - totalScore))} below pass`}
+                            : `-${Math.max(1, Math.round(maxMarks * (passThreshold / 100) - totalScore))} below pass`}
                         </span>
                       </div>
                     </div>

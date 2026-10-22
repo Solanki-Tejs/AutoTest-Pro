@@ -88,6 +88,9 @@ export function playNotificationSound() {
   }
 }
 
+// Module-level deduplication cache to ensure exactly 1 popup toast per notification across StrictMode, remounts, and polls
+const globalShownToastIds = new Set<string>();
+
 export default function NotificationBell({ role = "teacher" }: { role?: "teacher" | "student" }) {
   const router = useRouter();
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
@@ -98,6 +101,27 @@ export default function NotificationBell({ role = "teacher" }: { role?: "teacher
   const initialLoadDoneRef = useRef(false);
 
   const accentColor = role === "teacher" ? "#0047ff" : "#ff1d58";
+
+  const triggerToastForNotification = useCallback((notif: AppNotification, token: string) => {
+    if (!notif.id || globalShownToastIds.has(notif.id)) return;
+    globalShownToastIds.add(notif.id);
+
+    const linkUrl = notif.link;
+    toast(notif.title || "New Notification", {
+      id: `notif-${notif.id}`,
+      description: notif.message,
+      action: linkUrl
+        ? {
+            label: "View",
+            onClick: () => {
+              markNotificationRead(token, notif.id).catch(() => {});
+              router.push(linkUrl);
+            },
+          }
+        : undefined,
+      duration: 7000,
+    });
+  }, [router]);
 
   const loadNotifications = useCallback(async () => {
     const token = getStoredToken();
@@ -110,54 +134,24 @@ export default function NotificationBell({ role = "teacher" }: { role?: "teacher
       if (initialLoadDoneRef.current) {
         // Detect newly arrived unread notifications
         const newlyArrived = items.filter(
-          (n) => !n.is_read && !knownIdsRef.current.has(n.id)
+          (n) => !n.is_read && !knownIdsRef.current.has(n.id) && !globalShownToastIds.has(n.id)
         );
 
         if (newlyArrived.length > 0) {
           playNotificationSound();
-          newlyArrived.forEach((notif) => {
-            const linkUrl = notif.link;
-            toast(notif.title || "New Notification", {
-              description: notif.message,
-              action: linkUrl
-                ? {
-                    label: "View",
-                    onClick: () => {
-                      markNotificationRead(token, notif.id).catch(() => {});
-                      router.push(linkUrl);
-                    },
-                  }
-                : undefined,
-              duration: 8000,
-            });
-          });
+          newlyArrived.forEach((notif) => triggerToastForNotification(notif, token));
         }
       } else {
-        // First load: trigger pop-up if an unread notification was issued in the last 20 seconds
+        // First load: trigger pop-up if an unread notification was issued in the last 15 seconds
         const recentUnread = items.filter((n) => {
-          if (n.is_read) return false;
+          if (n.is_read || globalShownToastIds.has(n.id)) return false;
           const created = new Date(n.created_at).getTime();
-          return !isNaN(created) && Math.abs(Date.now() - created) < 20000;
+          return !isNaN(created) && Math.abs(Date.now() - created) < 15000;
         });
 
         if (recentUnread.length > 0) {
           playNotificationSound();
-          recentUnread.forEach((notif) => {
-            const linkUrl = notif.link;
-            toast(notif.title || "New Notification", {
-              description: notif.message,
-              action: linkUrl
-                ? {
-                    label: "View",
-                    onClick: () => {
-                      markNotificationRead(token, notif.id).catch(() => {});
-                      router.push(linkUrl);
-                    },
-                  }
-                : undefined,
-              duration: 8000,
-            });
-          });
+          recentUnread.forEach((notif) => triggerToastForNotification(notif, token));
         }
       }
 
@@ -166,7 +160,7 @@ export default function NotificationBell({ role = "teacher" }: { role?: "teacher
     } catch {
       // silently fail in background
     }
-  }, [router]);
+  }, [triggerToastForNotification]);
 
   useEffect(() => {
     loadNotifications();
@@ -214,9 +208,9 @@ export default function NotificationBell({ role = "teacher" }: { role?: "teacher
     try {
       await markAllNotificationsRead(token);
       setNotifications((prev) => prev.map((n) => ({ ...n, is_read: true })));
-      toast.success("All notifications marked as read");
+      toast.success("All notifications marked as read", { id: "mark-all-read" });
     } catch (err: any) {
-      toast.error(err.message || "Failed to mark notifications");
+      toast.error(err.message || "Failed to mark notifications", { id: "mark-all-error" });
     } finally {
       setLoading(false);
     }

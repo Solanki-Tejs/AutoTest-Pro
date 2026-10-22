@@ -12,6 +12,7 @@ class ExamCreate(BaseModel):
     selected_pdf_ids: List[UUID] = []
     start_time: Optional[datetime] = None
     end_time: Optional[datetime] = None
+    passing_percentage: Optional[float] = 40.0
 
 class ExamUpdate(BaseModel):
     title: Optional[str] = Field(None, min_length=1)
@@ -23,6 +24,7 @@ class ExamUpdate(BaseModel):
     start_time: Optional[datetime] = None
     end_time: Optional[datetime] = None
     status: Optional[str] = None
+    passing_percentage: Optional[float] = None
 
 class ExamPublishRequest(BaseModel):
     start_time: datetime
@@ -41,3 +43,4 @@ class ExamResponse(BaseModel):
     end_time: Optional[datetime]
     status: str
     created_at: datetime
+    passing_percentage: Optional[float] = 40.0

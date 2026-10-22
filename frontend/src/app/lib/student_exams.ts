@@ -31,6 +31,7 @@ export interface StudentExam {
   start_time: string;
   end_time: string;
   status: string;
+  passing_percentage?: number;
   attempt: StudentExamAttempt | null;
 }
 

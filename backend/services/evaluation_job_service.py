@@ -32,6 +32,12 @@ def evaluate_submission(attempt_id: str, exam_id: str):
         for section in qb.get("question_body", {}).get("sections", []):
             for q in section.get("questions", []):
                 q_map[q["question_id"]] = q
+
+        # Restrict evaluation strictly to candidate's assigned question paper
+        paper_doc = mongo_db.exam_attempt_papers.find_one({"attempt_id": str(attempt_id)})
+        assigned_qids = set(paper_doc.get("assigned_question_ids", [])) if paper_doc and paper_doc.get("assigned_question_ids") else None
+        if assigned_qids is not None:
+            q_map = {qid: meta for qid, meta in q_map.items() if qid in assigned_qids}
                 
         # Load answer bank
         ab = get_active_answer_bank(exam_id)
